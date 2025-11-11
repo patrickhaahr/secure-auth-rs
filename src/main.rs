@@ -1,9 +1,7 @@
+mod crypto;
 mod db;
 
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{Router, routing::get};
 use sqlx::Pool;
 use sqlx::Sqlite;
 use std::sync::Arc;
@@ -25,9 +23,7 @@ async fn main() {
 
     println!("✓ Database connected and migrations completed");
 
-    let app_state = AppState {
-        db: Arc::new(pool),
-    };
+    let app_state = AppState { db: Arc::new(pool) };
 
     // Create router
     let app = Router::new()
@@ -41,9 +37,7 @@ async fn main() {
 
     println!("✓ Server running on http://127.0.0.1:3000");
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server failed");
+    axum::serve(listener, app).await.expect("Server failed");
 }
 
 async fn health_check() -> &'static str {

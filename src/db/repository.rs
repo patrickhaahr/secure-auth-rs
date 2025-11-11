@@ -1,4 +1,4 @@
-use super::models::{Account, AccountRole, CprData, Passkey, TotpSecret};
+use super::models::{Account, CprData, Passkey, TotpSecret};
 use sqlx::{Pool, Sqlite};
 
 // Account
