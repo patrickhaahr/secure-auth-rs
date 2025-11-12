@@ -8,9 +8,9 @@ pub async fn create_account(
 ) -> Result<Account, sqlx::Error> {
     let result = sqlx::query_as::<_, Account>(
         r#"
-        INSERT INTO accounts (id, created_at)
-        VALUES (?, datetime('now'))
-        RETURNING id, created_at
+        INSERT INTO accounts (id, created_at, is_verified)
+        VALUES (?, datetime('now'), FALSE)
+        RETURNING id, created_at, is_verified
         "#,
     )
     .bind(id)
@@ -145,6 +145,42 @@ pub async fn has_cpr(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx
     }
 
     Ok(result.0 > 0)
+}
+
+// Account verification status
+pub async fn is_account_verified(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx::Error> {
+    let result: Option<(bool,)> = sqlx::query_as(
+        r#"
+            SELECT is_verified FROM accounts WHERE id = ?
+            "#,
+    )
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let is_verified = result.map(|r| r.0).unwrap_or(false);
+    tracing::debug!(account_id = %account_id, is_verified = %is_verified, "Account verification check");
+
+    Ok(is_verified)
+}
+
+pub async fn set_account_verified(pool: &Pool<Sqlite>, account_id: &str) -> Result<(), sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+            UPDATE accounts SET is_verified = TRUE WHERE id = ?
+            "#,
+    )
+    .bind(account_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() > 0 {
+        tracing::info!(account_id = %account_id, "Account marked as verified");
+    } else {
+        tracing::warn!(account_id = %account_id, "Attempted to verify non-existent account");
+    }
+
+    Ok(())
 }
 
 // Passkey

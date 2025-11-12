@@ -1,5 +1,5 @@
 use crate::{middleware::auth::AuthenticatedUser, AppState, crypto::cpr, db::repository};
-use axum::{extract::State, http::StatusCode, response::Json};
+use axum::{extract::{Path, State}, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 
 // Request/Response Types
@@ -12,6 +12,25 @@ pub struct CprSubmitRequest {
 
 #[derive(Serialize)]
 pub struct CprSubmitResponse {
+    success: bool,
+    message: String,
+}
+
+#[derive(Serialize)]
+pub struct AccountStatusResponse {
+    is_verified: bool,
+    has_totp: bool,
+    has_cpr: bool,
+}
+
+#[derive(Deserialize)]
+pub struct CprVerifyRequest {
+    account_id: String,
+    cpr: String,
+}
+
+#[derive(Serialize)]
+pub struct CprVerifyResponse {
     success: bool,
     message: String,
 }
@@ -69,6 +88,32 @@ pub async fn submit_cpr(
     match repository::insert_cpr_data(&state.db, &account_id, &cpr_hash).await {
         Ok(_) => {
             tracing::info!("CPR stored successfully");
+            
+            // Check if TOTP is verified, if so, mark account as fully verified
+            let totp_verified = sqlx::query_scalar!(
+                r#"
+                    SELECT is_verified FROM totp_secrets WHERE account_id = ?
+                    "#,
+                account_id
+            )
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to check TOTP verification status");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            })?;
+
+            if totp_verified {
+                repository::set_account_verified(&state.db, &account_id)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "Failed to mark account as verified");
+                        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to verify account".to_string())
+                    })?;
+                
+                tracing::info!(account_id = %account_id, "Account fully verified (TOTP + CPR)");
+            }
+
             Ok(Json(CprSubmitResponse {
                 success: true,
                 message: "CPR stored successfully".to_string(),
@@ -92,5 +137,158 @@ pub async fn submit_cpr(
                 ))
             }
         }
+    }
+}
+
+/// GET /api/account/{account_id}/status
+/// Get account verification status
+pub async fn get_account_status(
+    State(state): State<AppState>,
+    Path(account_id): Path<String>,
+) -> Result<Json<AccountStatusResponse>, (StatusCode, String)> {
+    // Verify account exists
+    let account_exists = repository::account_exists(&state.db, &account_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to verify account");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+        })?;
+
+    if !account_exists {
+        return Err((StatusCode::NOT_FOUND, "Account not found".to_string()));
+    }
+
+    // Check verification status
+    let is_verified = repository::is_account_verified(&state.db, &account_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to check account verification");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+        })?;
+
+    // Check if TOTP is configured and verified
+    let has_totp_count: i64 = sqlx::query_scalar!(
+        r#"
+            SELECT COUNT(*)
+            FROM totp_secrets 
+            WHERE account_id = ? AND is_verified = TRUE
+            "#,
+        account_id
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Failed to check TOTP status");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+    })?;
+    
+    let has_totp = has_totp_count > 0;
+
+    // Check if CPR is submitted
+    let has_cpr = repository::has_cpr(&state.db, &account_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to check CPR status");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+        })?;
+
+    tracing::debug!(
+        account_id = %account_id,
+        is_verified = %is_verified,
+        has_totp = %has_totp,
+        has_cpr = %has_cpr,
+        "Account status retrieved"
+    );
+
+    Ok(Json(AccountStatusResponse {
+        is_verified,
+        has_totp,
+        has_cpr,
+    }))
+}
+
+/// POST /api/account/cpr/verify
+/// Verify CPR number for login (doesn't store, just validates)
+pub async fn verify_cpr_for_login(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(payload): Json<CprVerifyRequest>,
+) -> Result<Json<CprVerifyResponse>, (StatusCode, String)> {
+    let account_id = payload.account_id;
+    let cpr = payload.cpr;
+
+    // Authorization check: user must own the account or be admin
+    if user.account_id != account_id {
+        let is_admin = repository::is_admin(&state.db, &user.account_id)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "Failed to check admin status");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            })?;
+
+        if !is_admin {
+            tracing::warn!(
+                requesting_account = %user.account_id,
+                target_account = %account_id,
+                "Unauthorized CPR verification attempt"
+            );
+            return Err((StatusCode::FORBIDDEN, "Unauthorized".to_string()));
+        }
+    }
+
+    // Verify account exists
+    let account_exists = repository::account_exists(&state.db, &account_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to verify account");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+        })?;
+
+    if !account_exists {
+        return Err((StatusCode::BAD_REQUEST, "Invalid account".to_string()));
+    }
+
+    // Hash the CPR number to validate format
+    let _cpr_hash = cpr::hash_cpr(&cpr).map_err(|e| {
+        tracing::error!(error = %e, "Failed to hash CPR for verification");
+        (StatusCode::BAD_REQUEST, "Invalid CPR format".to_string())
+    })?;
+
+    // Check if this CPR hash exists for the account
+    let cpr_hash = cpr::hash_cpr(&cpr).map_err(|e| {
+        tracing::error!(error = %e, "Failed to hash CPR for comparison");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to verify CPR".to_string())
+    })?;
+    
+    let cpr_matches_count: i64 = sqlx::query_scalar!(
+        r#"
+            SELECT COUNT(*)
+            FROM cpr_data 
+            WHERE account_id = ? AND cpr_hash = ?
+            "#,
+        account_id,
+        cpr_hash
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "Failed to verify CPR match");
+        (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+    })?;
+    
+    let cpr_matches = cpr_matches_count > 0;
+
+    if cpr_matches {
+        tracing::info!(account_id = %account_id, "CPR verified successfully for login");
+        Ok(Json(CprVerifyResponse {
+            success: true,
+            message: "CPR verified".to_string(),
+        }))
+    } else {
+        tracing::warn!(account_id = %account_id, "CPR verification failed - no match");
+        Ok(Json(CprVerifyResponse {
+            success: false,
+            message: "Invalid CPR".to_string(),
+        }))
     }
 }

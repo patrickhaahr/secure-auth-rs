@@ -97,6 +97,7 @@ async fn main() {
     // CPR submission route (requires CSRF + Auth, but NOT CPR check since this is how you submit CPR)
     let cpr_submission_route = Router::new()
         .route("/api/account/cpr", post(routes::account::submit_cpr))
+        .route("/api/account/cpr/verify", post(routes::account::verify_cpr_for_login))
         .layer(axum_middleware::from_fn({
             let csrf = csrf_protection.clone();
             move |req, next| {
@@ -109,6 +110,7 @@ async fn main() {
     let csrf_protected_routes = Router::new()
         .route("/api/signup", post(routes::auth::signup))
         .route("/api/login/totp/setup", post(routes::auth::totp_setup))
+        .route("/api/account/{account_id}/status", get(routes::account::get_account_status))
         .layer(axum_middleware::from_fn(move |req, next| {
             let csrf = csrf_protection.clone();
             async move { csrf.middleware(req, next).await }

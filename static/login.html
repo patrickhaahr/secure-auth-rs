@@ -52,6 +52,18 @@
             <input type="text" id="cpr" placeholder="DDMMYY-XXXX" maxlength="11">
             <button id="submitCprBtn">Submit CPR</button>
         </div>
+        <div id="unifiedLoginStep" style="display:none;">
+            <h2>Login - Enter Both Codes</h2>
+            <div>
+                <label>TOTP Code:</label>
+                <input type="text" id="unifiedTotpCode" placeholder="123456" maxlength="6">
+            </div>
+            <div style="margin-top: 15px;">
+                <label>CPR Number:</label>
+                <input type="text" id="unifiedCpr" placeholder="DDMMYY-XXXX" maxlength="11">
+            </div>
+            <button id="unifiedLoginBtn" style="margin-top: 15px;">Login</button>
+        </div>
         <div id="loginStep" style="display:none;">
             <h2>Enter TOTP Code</h2>
             <input type="text" id="loginCode" placeholder="123456" maxlength="6">
@@ -101,10 +113,10 @@
 
         // Check token on page load
         if (!isTokenExpired() && localStorage.getItem("auth_token")) {
-            window.location.href = "/auth.html";
+            window.location.href = "/";
         }
 
-        document.getElementById("continueBtn").addEventListener("click", () => {
+        document.getElementById("continueBtn").addEventListener("click", async () => {
             const accountId = document.getElementById("accountId").value.trim();
             if (!accountId || accountId.length !== 16) {
                 alert("Account ID must be exactly 16 characters");
@@ -115,8 +127,36 @@
                 return;
             }
             currentAccountId = accountId;
-            document.getElementById("accountStep").style.display = "none";
-            document.getElementById("setupStep").style.display = "block";
+            
+            // Check account status
+            try {
+                const response = await fetch(`/api/account/${accountId}/status`);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        alert("Account not found");
+                        return;
+                    }
+                    throw new Error(`Error: ${response.status}`);
+                }
+                
+                const status = await response.json();
+                
+                document.getElementById("accountStep").style.display = "none";
+                
+                if (status.is_verified) {
+                    // Show unified login for verified users
+                    document.getElementById("unifiedLoginStep").style.display = "block";
+                } else if (status.has_totp && !status.has_cpr) {
+                    // User has TOTP but needs CPR
+                    document.getElementById("cprStep").style.display = "block";
+                } else {
+                    // New user or missing TOTP - show setup
+                    document.getElementById("setupStep").style.display = "block";
+                }
+            } catch (error) {
+                alert(`Failed to check account status: ${error.message}`);
+                console.error("Account status check error:", error);
+            }
         });
 
         document.getElementById("setupTotpBtn").addEventListener("click", async () => {
@@ -346,7 +386,7 @@
                 document.getElementById("cprStep").style.display = "none";
                 document.getElementById("success").style.display = "block";
                 document.getElementById("successMsg").textContent = "Setup complete! Redirecting to dashboard...";
-                setTimeout(() => window.location.href = "/auth.html", 2000);
+                setTimeout(() => window.location.href = "/", 2000);
               } else {
                   alert("Failed to submit CPR: " + data.message);
                   btn.disabled = false;
@@ -354,6 +394,99 @@
           } catch (error) {
               alert(`Error: ${error.message}`);
               console.error("CPR submission error:", error);
+              btn.disabled = false;
+          }
+        });
+
+        document.getElementById("unifiedLoginBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("unifiedLoginBtn");
+          if (btn.disabled) return;
+          btn.disabled = true;
+
+          try {
+              const totpCode = document.getElementById("unifiedTotpCode").value.trim();
+              const cpr = document.getElementById("unifiedCpr").value.trim();
+              
+              if (!totpCode || !totpCode.match(/^\d{6}$/)) {
+                  alert("TOTP code must be 6 digits");
+                  btn.disabled = false;
+                  return;
+              }
+              
+              if (!cpr || !cpr.match(/^\d{6}-\d{4}$/)) {
+                  alert("CPR must be in format DDMMYY-XXXX");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const csrfToken = await getCsrfToken();
+              if (!csrfToken) {
+                  alert("Failed to get security token. Please refresh the page.");
+                  btn.disabled = false;
+                  return;
+              }
+
+              // First verify TOTP and get token
+              const loginResponse = await fetch("/api/login", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken
+                },
+                body: JSON.stringify({ account_id: currentAccountId, code: totpCode })
+              });
+
+              if (!loginResponse.ok) {
+                  const errorText = await loginResponse.text();
+                  alert(`TOTP Error: ${loginResponse.status} - ${errorText}`);
+                  console.error("TOTP login error:", errorText);
+                  btn.disabled = false;
+                  return;
+              }
+
+              const loginData = await loginResponse.json();
+              if (!loginData.success || !loginData.token) {
+                  alert("Invalid TOTP code");
+                  btn.disabled = false;
+                  return;
+              }
+
+              // Now verify CPR with the token
+              const cprResponse = await fetch("/api/account/cpr/verify", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken,
+                    "Authorization": `Bearer ${loginData.token}`
+                },
+                body: JSON.stringify({ account_id: currentAccountId, cpr: cpr })
+              });
+
+              if (!cprResponse.ok) {
+                  const errorText = await cprResponse.text();
+                  alert(`CPR Error: ${cprResponse.status} - ${errorText}`);
+                  console.error("CPR verification error:", errorText);
+                  btn.disabled = false;
+                  return;
+              }
+
+              const cprData = await cprResponse.json();
+              if (cprData.success) {
+                  // Store JWT token
+                  storeToken(loginData.token);
+                  
+                  // Show success message then redirect
+                  document.getElementById("unifiedLoginStep").style.display = "none";
+                  document.getElementById("success").style.display = "block";
+                  document.getElementById("successMsg").textContent = "Login successful! Redirecting...";
+                  setTimeout(() => window.location.href = "/", 2000);
+              } else {
+                  alert("Invalid CPR number");
+                  btn.disabled = false;
+              }
+          } catch (error) {
+              alert(`Error: ${error.message}`);
+              console.error("Unified login error:", error);
               btn.disabled = false;
           }
         });
@@ -405,7 +538,7 @@
                 document.getElementById("loginStep").style.display = "none";
                 document.getElementById("success").style.display = "block";
                 document.getElementById("successMsg").textContent = "Login successful! Redirecting...";
-                setTimeout(() => window.location.href = "/auth.html", 2000);
+                setTimeout(() => window.location.href = "/", 2000);
               } else {
                   alert("Failed to login: " + data.message);
                   btn.disabled = false;

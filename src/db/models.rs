@@ -9,6 +9,8 @@ pub struct Account {
     pub id: String,
     /// ISO 8601 timestamp
     pub created_at: String,
+    /// Whether account has completed full verification (TOTP + CPR)
+    pub is_verified: bool,
 }
 
 /// CPR data model - Hashed CPR information
