@@ -11,8 +11,29 @@
         <div id="admin-view" style="display: none;">
             <h1>Admin Panel</h1>
             <p>Welcome to the admin area.</p>
-            <button id="logoutBtn">Logout</button>
-            <button id="backBtn">Back to Dashboard</button>
+            
+            <div id="users-section">
+                <h2>User Management</h2>
+                <button id="refreshUsersBtn">Refresh Users</button>
+                <div id="users-error" class="error" style="display: none;"></div>
+                <table id="users-table" style="display: none; width: 100%; border-collapse: collapse; margin-top: 20px;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5;">
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">ID</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Created At</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Verified Status</th>
+                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-tbody">
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top: 30px;">
+                <button id="logoutBtn">Logout</button>
+                <button id="backBtn">Back to Dashboard</button>
+            </div>
         </div>
         
         <div id="access-denied" style="display: none;">
@@ -32,6 +53,119 @@
             localStorage.removeItem("auth_token");
             localStorage.removeItem("auth_token_expires");
             window.location.href = "/login.html";
+        }
+
+        async function getCsrfToken() {
+            try {
+                const response = await fetch("/api/csrf-token");
+                const data = await response.json();
+                return data.csrf_token;
+            } catch (error) {
+                console.error("Error fetching CSRF token:", error);
+                return null;
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById("users-error");
+            errorDiv.textContent = message;
+            errorDiv.style.display = "block";
+            setTimeout(() => {
+                errorDiv.style.display = "none";
+            }, 5000);
+        }
+
+        async function fetchUsers() {
+            const token = localStorage.getItem("auth_token");
+            const csrfToken = await getCsrfToken();
+            
+            if (!csrfToken) {
+                showError("Failed to get CSRF token");
+                return;
+            }
+            
+            try {
+                const response = await fetch("/api/admin/users", {
+                    method: "GET",
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": csrfToken
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch users: ${response.status}`);
+                }
+
+                const users = await response.json();
+                displayUsers(users);
+            } catch (error) {
+                console.error("Error fetching users:", error);
+                showError(error.message);
+            }
+        }
+
+        function displayUsers(users) {
+            const tbody = document.getElementById("users-tbody");
+            const table = document.getElementById("users-table");
+            
+            tbody.innerHTML = "";
+            
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center;">No users found</td></tr>';
+            } else {
+                users.forEach(user => {
+                    const row = document.createElement("tr");
+                    row.innerHTML = `
+                        <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">${user.id}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${new Date(user.created_at).toLocaleString()}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${user.is_verified ? '✅ Verified' : '❌ Not Verified'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">
+                            <button onclick="deleteUser('${user.id}')" style="background-color: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer;">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+            
+            table.style.display = "table";
+        }
+
+        async function deleteUser(accountId) {
+            if (!confirm(`Are you sure you want to delete user ${accountId}?`)) {
+                return;
+            }
+
+            const token = localStorage.getItem("auth_token");
+            const csrfToken = await getCsrfToken();
+            
+            if (!csrfToken) {
+                showError("Failed to get CSRF token");
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/users/${accountId}`, {
+                    method: "DELETE",
+                    headers: {
+                        "Authorization": `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": csrfToken
+                    }
+                });
+
+                if (response.ok) {
+                    // Refresh the users list
+                    await fetchUsers();
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`Failed to delete user: ${response.status} - ${errorText}`);
+                }
+            } catch (error) {
+                console.error("Error deleting user:", error);
+                showError(error.message);
+            }
         }
 
         async function checkAdminAccess() {
@@ -56,10 +190,15 @@
                     document.getElementById("admin-view").style.display = "block";
                     document.getElementById("access-denied").style.display = "none";
                     
+                    // Set up event listeners
                     document.getElementById("logoutBtn").addEventListener("click", logout);
                     document.getElementById("backBtn").addEventListener("click", () => {
                         window.location.href = "/";
                     });
+                    document.getElementById("refreshUsersBtn").addEventListener("click", fetchUsers);
+                    
+                    // Load users when admin access is granted
+                    await fetchUsers();
                 } else if (response.status === 403) {
                     document.getElementById("admin-view").style.display = "none";
                     document.getElementById("access-denied").style.display = "block";

@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Json,
-};
+use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -133,17 +129,22 @@ pub async fn totp_setup(
     })?;
 
     // Generate otpauth:// URI for manual entry
-    let otpauth_uri = totp::generate_otpauth_uri(&secret, &account_id, "SecureAuthRS").map_err(|e| {
-        tracing::error!(error = %e, "Failed to generate otpauth URI");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to generate otpauth URI".to_string(),
-        )
-    })?;
+    let otpauth_uri =
+        totp::generate_otpauth_uri(&secret, &account_id, "SecureAuthRS").map_err(|e| {
+            tracing::error!(error = %e, "Failed to generate otpauth URI");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate otpauth URI".to_string(),
+            )
+        })?;
 
     tracing::info!(account_id = %account_id, "TOTP setup completed");
 
-    Ok(Json(TotpSetupResponse { secret, qr_uri, otpauth_uri }))
+    Ok(Json(TotpSetupResponse {
+        secret,
+        qr_uri,
+        otpauth_uri,
+    }))
 }
 
 /// POST /api/login/totp/verify
@@ -262,16 +263,16 @@ pub async fn login(
 
     let totp_record = totp_record.ok_or_else(|| {
         tracing::warn!(account_id = %account_id, "Account not found or TOTP not configured");
-        (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string(),)
+        (StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
     })?;
 
     // Check if TOTP is verified
     if !totp_record.is_verified {
         tracing::warn!(account_id = %account_id, "TOTP not yet verified");
         return Err((
-                StatusCode::FORBIDDEN,
-                "TOTP must be verified before login".to_string(),
-                ));
+            StatusCode::FORBIDDEN,
+            "TOTP must be verified before login".to_string(),
+        ));
     }
 
     // Decrypt secret
@@ -313,9 +314,9 @@ pub async fn login(
 
     tracing::info!(account_id = %account_id, "Login successful");
 
-    Ok(Json(LoginResponse { 
-            success: true,
-            message: "Login successful".to_string(),
-            token: Some(token),
+    Ok(Json(LoginResponse {
+        success: true,
+        message: "Login successful".to_string(),
+        token: Some(token),
     }))
 }

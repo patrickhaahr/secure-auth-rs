@@ -2,10 +2,10 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
 };
+use base64::{Engine as _, engine::general_purpose};
 use rand_core::{OsRng, RngCore};
 use totp_rs::{Algorithm, Secret, TOTP};
 use zeroize::Zeroizing;
-use base64::{Engine as _, engine::general_purpose};
 
 /// Error type for TOTP operations
 #[derive(Debug)]
@@ -331,7 +331,11 @@ pub fn verify_totp_code(secret: &str, code: &str) -> Result<bool, TotpError> {
 /// let uri = generate_otpauth_uri("JBSWY3DPEHPK3PXP", "A1B2C3D4E5F6G7H8", "AuthApp");
 /// // Returns: "otpauth://totp/AuthApp:A1B2C3D4E5F6G7H8?secret=JBSWY3DPEHPK3PXP&issuer=AuthApp&algorithm=SHA512"
 /// ```
-pub fn generate_otpauth_uri(secret: &str, account_id: &str, issuer: &str) -> Result<String, TotpError> {
+pub fn generate_otpauth_uri(
+    secret: &str,
+    account_id: &str,
+    issuer: &str,
+) -> Result<String, TotpError> {
     // Parse the base32 secret
     let secret_enum = Secret::Encoded(secret.to_string());
     let secret_bytes = secret_enum.to_bytes().map_err(|_| {
@@ -566,14 +570,16 @@ mod tests {
             data_uri.starts_with("data:image/png;base64,"),
             "Should be a base64-encoded PNG data URI"
         );
-        
+
         // Verify it's a valid base64 string after the prefix
         let base64_part = data_uri.strip_prefix("data:image/png;base64,").unwrap();
         assert!(!base64_part.is_empty(), "Base64 data should not be empty");
-        
+
         // Verify it contains valid base64 characters
         assert!(
-            base64_part.chars().all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '='),
+            base64_part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '='),
             "Should contain valid base64 characters"
         );
     }
@@ -587,8 +593,11 @@ mod tests {
         let data_uri = generate_qr_uri(&secret, account_id, issuer).expect("URI generation failed");
 
         // Should be a valid data URI (base64-encoded PNG)
-        assert!(data_uri.starts_with("data:image/png;base64,"), "Should be a base64-encoded PNG data URI");
-        
+        assert!(
+            data_uri.starts_with("data:image/png;base64,"),
+            "Should be a base64-encoded PNG data URI"
+        );
+
         // Verify it's not empty
         let base64_part = data_uri.strip_prefix("data:image/png;base64,").unwrap();
         assert!(!base64_part.is_empty(), "Base64 data should not be empty");
@@ -610,7 +619,10 @@ mod tests {
         assert!(uri.contains(&secret), "URI should contain secret");
         assert!(uri.contains(account_id), "URI should contain account ID");
         assert!(uri.contains(issuer), "URI should contain issuer");
-        assert!(uri.contains("algorithm=SHA512"), "URI should specify SHA512");
+        assert!(
+            uri.contains("algorithm=SHA512"),
+            "URI should specify SHA512"
+        );
     }
 
     #[test]
@@ -622,7 +634,10 @@ mod tests {
         let uri = generate_otpauth_uri(&secret, account_id, issuer).expect("URI generation failed");
 
         // URL encoding should be handled by totp-rs
-        assert!(uri.starts_with("otpauth://totp/"), "URI should be valid otpauth URL");
+        assert!(
+            uri.starts_with("otpauth://totp/"),
+            "URI should be valid otpauth URL"
+        );
         assert!(uri.contains(&secret), "URI should contain secret");
     }
 
@@ -633,7 +648,7 @@ mod tests {
 
         // Generate a code
         let code = generate_totp_code(&secret).expect("Code generation failed");
-        
+
         // Verify the code immediately (should be valid)
         let is_valid = verify_totp_code(&secret, &code).expect("Verification failed");
         assert!(is_valid, "Generated code should verify successfully");
@@ -670,7 +685,10 @@ mod tests {
         let uri = generate_otpauth_uri(&secret, account_id, issuer).expect("URI generation failed");
 
         // Verify URI contains the secret (simulating manual entry or QR scan)
-        assert!(uri.contains(&secret), "OTPAuth URI should contain the secret");
+        assert!(
+            uri.contains(&secret),
+            "OTPAuth URI should contain the secret"
+        );
 
         // Generate code using the same secret
         let code = generate_totp_code(&secret).expect("Code generation failed");
@@ -694,12 +712,23 @@ mod tests {
         let encrypted = encrypt_totp_secret(&secret, &key).expect("Encryption failed");
 
         // 3. Generate QR data URI and otpauth URI for user enrollment
-        let qr_data_uri = generate_qr_uri(&secret, account_id, issuer).expect("QR generation failed");
-        assert!(qr_data_uri.starts_with("data:image/png;base64,"), "QR should be base64 PNG data URI");
-        
-        let otpauth_uri = generate_otpauth_uri(&secret, account_id, issuer).expect("OTPAuth URI generation failed");
-        assert!(otpauth_uri.contains(&secret), "OTPAuth URI should contain secret");
-        assert!(otpauth_uri.contains("algorithm=SHA512"), "OTPAuth URI should specify SHA512");
+        let qr_data_uri =
+            generate_qr_uri(&secret, account_id, issuer).expect("QR generation failed");
+        assert!(
+            qr_data_uri.starts_with("data:image/png;base64,"),
+            "QR should be base64 PNG data URI"
+        );
+
+        let otpauth_uri = generate_otpauth_uri(&secret, account_id, issuer)
+            .expect("OTPAuth URI generation failed");
+        assert!(
+            otpauth_uri.contains(&secret),
+            "OTPAuth URI should contain secret"
+        );
+        assert!(
+            otpauth_uri.contains("algorithm=SHA512"),
+            "OTPAuth URI should specify SHA512"
+        );
 
         // 4. Simulate time passing - decrypt secret from storage
         let decrypted = decrypt_totp_secret(&encrypted, &key).expect("Decryption failed");
@@ -727,7 +756,10 @@ mod tests {
         let code1 = generate_totp_code(&secret).expect("First code generation failed");
         let code2 = generate_totp_code(&secret).expect("Second code generation failed");
 
-        assert_eq!(code1, code2, "Same secret should generate identical codes at same time");
+        assert_eq!(
+            code1, code2,
+            "Same secret should generate identical codes at same time"
+        );
     }
 
     #[test]

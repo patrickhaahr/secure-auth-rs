@@ -55,7 +55,7 @@ impl CsrfProtection {
     /// Verify a CSRF token
     pub fn verify_token(&self, token: &str) -> bool {
         let mut tokens = self.tokens.lock().unwrap();
-        
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()

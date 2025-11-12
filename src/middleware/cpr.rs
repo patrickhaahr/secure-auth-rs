@@ -5,7 +5,7 @@ use axum::{
     response::Response,
 };
 
-use crate::{middleware::auth::AuthenticatedUser, db::repository, AppState};
+use crate::{AppState, db::repository, middleware::auth::AuthenticatedUser};
 
 /// Middleware that ensures the authenticated user has submitted CPR data
 /// before accessing protected endpoints (except /api/account/cpr itself)

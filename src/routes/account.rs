@@ -1,5 +1,9 @@
-use crate::{middleware::auth::AuthenticatedUser, AppState, crypto::cpr, db::repository};
-use axum::{extract::{Path, State}, http::StatusCode, response::Json};
+use crate::{AppState, crypto::cpr, db::repository, middleware::auth::AuthenticatedUser};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::Json,
+};
 use serde::{Deserialize, Serialize};
 
 // Request/Response Types
@@ -53,7 +57,10 @@ pub async fn submit_cpr(
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to check admin status");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error".to_string(),
+                )
             })?;
 
         if !is_admin {
@@ -71,7 +78,10 @@ pub async fn submit_cpr(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to verify account");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
         })?;
 
     if !account_exists {
@@ -88,7 +98,7 @@ pub async fn submit_cpr(
     match repository::insert_cpr_data(&state.db, &account_id, &cpr_hash).await {
         Ok(_) => {
             tracing::info!("CPR stored successfully");
-            
+
             // Check if TOTP is verified, if so, mark account as fully verified
             let totp_verified = sqlx::query_scalar!(
                 r#"
@@ -100,7 +110,10 @@ pub async fn submit_cpr(
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to check TOTP verification status");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error".to_string(),
+                )
             })?;
 
             if totp_verified {
@@ -108,9 +121,12 @@ pub async fn submit_cpr(
                     .await
                     .map_err(|e| {
                         tracing::error!(error = %e, "Failed to mark account as verified");
-                        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to verify account".to_string())
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "Failed to verify account".to_string(),
+                        )
                     })?;
-                
+
                 tracing::info!(account_id = %account_id, "Account fully verified (TOTP + CPR)");
             }
 
@@ -151,7 +167,10 @@ pub async fn get_account_status(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to verify account");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
         })?;
 
     if !account_exists {
@@ -163,7 +182,10 @@ pub async fn get_account_status(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to check account verification");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
         })?;
 
     // Check if TOTP is configured and verified
@@ -179,9 +201,12 @@ pub async fn get_account_status(
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Failed to check TOTP status");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Database error".to_string(),
+        )
     })?;
-    
+
     let has_totp = has_totp_count > 0;
 
     // Check if CPR is submitted
@@ -189,7 +214,10 @@ pub async fn get_account_status(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to check CPR status");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
         })?;
 
     tracing::debug!(
@@ -223,7 +251,10 @@ pub async fn verify_cpr_for_login(
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to check admin status");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error".to_string(),
+                )
             })?;
 
         if !is_admin {
@@ -241,7 +272,10 @@ pub async fn verify_cpr_for_login(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to verify account");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
         })?;
 
     if !account_exists {
@@ -253,7 +287,10 @@ pub async fn verify_cpr_for_login(
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to retrieve stored CPR hash");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
         })?;
 
     let stored_cpr_hash = match stored_cpr_hash {
@@ -270,7 +307,10 @@ pub async fn verify_cpr_for_login(
     // Verify CPR against stored hash using peppered verification
     let is_valid = cpr::verify_cpr(&cpr, &stored_cpr_hash).map_err(|e| {
         tracing::error!(error = %e, "Failed to verify CPR");
-        (StatusCode::INTERNAL_SERVER_ERROR, "CPR verification failed".to_string())
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "CPR verification failed".to_string(),
+        )
     })?;
 
     if is_valid {

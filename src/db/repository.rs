@@ -2,10 +2,7 @@ use super::models::{Account, CprData, Passkey, TotpSecret};
 use sqlx::{Pool, Sqlite};
 
 // Account
-pub async fn create_account(
-    pool: &Pool<Sqlite>,
-    id: &str,
-) -> Result<Account, sqlx::Error> {
+pub async fn create_account(pool: &Pool<Sqlite>, id: &str) -> Result<Account, sqlx::Error> {
     let result = sqlx::query_as::<_, Account>(
         r#"
         INSERT INTO accounts (id, created_at, is_verified)
@@ -58,6 +55,21 @@ pub async fn delete_account(pool: &Pool<Sqlite>, id: &str) -> Result<u64, sqlx::
     Ok(rows_affected)
 }
 
+pub async fn get_all_accounts(pool: &Pool<Sqlite>) -> Result<Vec<Account>, sqlx::Error> {
+    let accounts = sqlx::query_as::<_, Account>(
+        r#"
+        SELECT id, created_at, is_verified
+        FROM accounts
+        ORDER BY created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    tracing::debug!(count = %accounts.len(), "Retrieved all accounts");
+    Ok(accounts)
+}
+
 // Account Role
 pub async fn is_admin(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx::Error> {
     let result: Option<(bool,)> = sqlx::query_as(
@@ -102,10 +114,10 @@ pub async fn insert_cpr_data(
 }
 
 pub async fn cpr_hash_exists(pool: &Pool<Sqlite>, cpr_hash: &str) -> Result<bool, sqlx::Error> {
-    use tokio::time::{sleep, Duration, Instant};
+    use tokio::time::{Duration, Instant, sleep};
 
     let start = Instant::now();
-    
+
     let result: (i64,) = sqlx::query_as(
         r#"
             SELECT COUNT(*) FROM cpr_data WHERE cpr_hash = ?
@@ -125,10 +137,10 @@ pub async fn cpr_hash_exists(pool: &Pool<Sqlite>, cpr_hash: &str) -> Result<bool
 }
 
 pub async fn has_cpr(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx::Error> {
-    use tokio::time::{sleep, Duration, Instant};
+    use tokio::time::{Duration, Instant, sleep};
 
     let start = Instant::now();
-    
+
     let result: (i64,) = sqlx::query_as(
         r#"
             SELECT COUNT(*) FROM cpr_data WHERE account_id = ?
@@ -147,11 +159,14 @@ pub async fn has_cpr(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx
     Ok(result.0 > 0)
 }
 
-pub async fn get_cpr_hash_by_account(pool: &Pool<Sqlite>, account_id: &str) -> Result<Option<String>, sqlx::Error> {
-    use tokio::time::{sleep, Duration, Instant};
+pub async fn get_cpr_hash_by_account(
+    pool: &Pool<Sqlite>,
+    account_id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    use tokio::time::{Duration, Instant, sleep};
 
     let start = Instant::now();
-    
+
     let result: Option<(String,)> = sqlx::query_as(
         r#"
             SELECT cpr_hash FROM cpr_data WHERE account_id = ?
@@ -171,7 +186,10 @@ pub async fn get_cpr_hash_by_account(pool: &Pool<Sqlite>, account_id: &str) -> R
 }
 
 // Account verification status
-pub async fn is_account_verified(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx::Error> {
+pub async fn is_account_verified(
+    pool: &Pool<Sqlite>,
+    account_id: &str,
+) -> Result<bool, sqlx::Error> {
     let result: Option<(bool,)> = sqlx::query_as(
         r#"
             SELECT is_verified FROM accounts WHERE id = ?
@@ -187,7 +205,10 @@ pub async fn is_account_verified(pool: &Pool<Sqlite>, account_id: &str) -> Resul
     Ok(is_verified)
 }
 
-pub async fn set_account_verified(pool: &Pool<Sqlite>, account_id: &str) -> Result<(), sqlx::Error> {
+pub async fn set_account_verified(
+    pool: &Pool<Sqlite>,
+    account_id: &str,
+) -> Result<(), sqlx::Error> {
     let result = sqlx::query(
         r#"
             UPDATE accounts SET is_verified = TRUE WHERE id = ?
@@ -348,7 +369,9 @@ pub async fn insert_totp_secret(
 
     match &result {
         Ok(_) => tracing::info!(account_id = %account_id, "TOTP secret created (unverified)"),
-        Err(e) => tracing::error!(account_id = %account_id, error = %e, "Failed to create TOTP secret"),
+        Err(e) => {
+            tracing::error!(account_id = %account_id, error = %e, "Failed to create TOTP secret")
+        }
     }
 
     result

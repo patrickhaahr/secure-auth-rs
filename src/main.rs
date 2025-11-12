@@ -4,11 +4,10 @@ mod middleware;
 mod routes;
 
 use axum::{
+    Json, Router,
     extract::State,
     middleware as axum_middleware,
-    Router,
     routing::{get, post},
-    Json,
 };
 use sqlx::Pool;
 use sqlx::Sqlite;
@@ -67,7 +66,7 @@ async fn main() {
     let rate_limiter = middleware::rate_limit::RateLimiter::new(5, Duration::from_secs(60));
 
     // Create router with proper middleware scoping
-    
+
     // Rate-limited routes (TOTP verification and login)
     let rate_limited_routes = Router::new()
         .route("/api/login/totp/verify", post(routes::auth::totp_verify))
@@ -95,10 +94,32 @@ async fn main() {
             }
         }));
 
+    // Admin routes (protected by CSRF + Auth + Admin verification)
+    let admin_routes = Router::new()
+        .route("/api/admin/users", get(routes::admin::list_users))
+        .route(
+            "/api/admin/users/{account_id}",
+            axum::routing::delete(routes::admin::delete_user),
+        )
+        .layer(axum_middleware::from_fn_with_state(
+            app_state.clone(),
+            middleware::auth::require_admin,
+        ))
+        .layer(axum_middleware::from_fn({
+            let csrf = csrf_protection.clone();
+            move |req, next| {
+                let csrf = csrf.clone();
+                async move { csrf.middleware(req, next).await }
+            }
+        }));
+
     // CPR submission route (requires CSRF + Auth, but NOT CPR check since this is how you submit CPR)
     let cpr_submission_route = Router::new()
         .route("/api/account/cpr", post(routes::account::submit_cpr))
-        .route("/api/account/cpr/verify", post(routes::account::verify_cpr_for_login))
+        .route(
+            "/api/account/cpr/verify",
+            post(routes::account::verify_cpr_for_login),
+        )
         .layer(axum_middleware::from_fn({
             let csrf = csrf_protection.clone();
             move |req, next| {
@@ -111,7 +132,10 @@ async fn main() {
     let csrf_protected_routes = Router::new()
         .route("/api/signup", post(routes::auth::signup))
         .route("/api/login/totp/setup", post(routes::auth::totp_setup))
-        .route("/api/account/{account_id}/status", get(routes::account::get_account_status))
+        .route(
+            "/api/account/{account_id}/status",
+            get(routes::account::get_account_status),
+        )
         .layer(axum_middleware::from_fn(move |req, next| {
             let csrf = csrf_protection.clone();
             async move { csrf.middleware(req, next).await }
@@ -125,6 +149,7 @@ async fn main() {
         .merge(csrf_protected_routes)
         .merge(cpr_submission_route)
         .merge(cpr_protected_routes)
+        .merge(admin_routes)
         .fallback_service(ServeDir::new("static"))
         .with_state(app_state);
 

@@ -1,20 +1,23 @@
+use crate::AppState;
 use axum::{
-    extract::FromRequestParts,
-    http::{request::Parts, StatusCode},
     RequestPartsExt,
+    extract::{FromRequestParts, State},
+    http::{StatusCode, request::Parts},
+    middleware::Next,
+    response::Response,
 };
 use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
     TypedHeader,
+    headers::{Authorization, authorization::Bearer},
 };
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
-    pub sub: String,      // account_id
-    pub exp: usize,       // expiry timestamp
-    pub iat: usize,       // issued at timestamp
+    pub sub: String, // account_id
+    pub exp: usize,  // expiry timestamp
+    pub iat: usize,  // issued at timestamp
 }
 
 #[derive(Clone)]
@@ -47,9 +50,8 @@ pub fn generate_token(account_id: &str) -> Result<String, jsonwebtoken::errors::
 
 /// Verify JWT token and extract claims
 pub fn verify_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-        "default_secret_change_in_production".to_string()
-    });
+    let secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "default_secret_change_in_production".to_string());
 
     let token_data = decode::<Claims>(
         token,
@@ -66,10 +68,7 @@ where
 {
     type Rejection = (StatusCode, String);
 
-    async fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Extract Authorization header
         let TypedHeader(Authorization(bearer)) = parts
             .extract::<TypedHeader<Authorization<Bearer>>>()
@@ -90,5 +89,31 @@ where
         Ok(AuthenticatedUser {
             account_id: claims.sub,
         })
+    }
+}
+
+/// Middleware to require admin privileges
+pub async fn require_admin(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    request: axum::extract::Request,
+    next: Next,
+) -> Result<Response, (StatusCode, String)> {
+    let is_admin = crate::db::repository::is_admin(&state.db, &user.account_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to check admin status");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Database error".to_string(),
+            )
+        })?;
+
+    if is_admin {
+        tracing::info!(account_id = %user.account_id, "Admin access granted");
+        Ok(next.run(request).await)
+    } else {
+        tracing::warn!(account_id = %user.account_id, "Admin access denied");
+        Err((StatusCode::FORBIDDEN, "Admin access required".to_string()))
     }
 }

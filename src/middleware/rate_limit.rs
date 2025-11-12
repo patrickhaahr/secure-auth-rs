@@ -133,7 +133,8 @@ impl RateLimiter {
 
     /// Extract session ID from cookie jar
     fn extract_session_from_cookie(jar: &CookieJar) -> Option<String> {
-        jar.get("rl_session").map(|cookie| cookie.value().to_string())
+        jar.get("rl_session")
+            .map(|cookie| cookie.value().to_string())
     }
 
     /// Create a new session cookie for rate limiting
@@ -163,14 +164,20 @@ impl RateLimiter {
         } else {
             // Fallback to session-based identification
             tracing::warn!("No IP address available, falling back to session-based rate limiting");
-            
+
             if let Some(session_id) = Self::extract_session_from_cookie(&jar) {
-                tracing::debug!("Using existing session for rate limiting: {}", &session_id[..8]);
+                tracing::debug!(
+                    "Using existing session for rate limiting: {}",
+                    &session_id[..8]
+                );
                 ClientIdentifier::Session(session_id)
             } else {
                 // Create new session
                 let new_session_id = Uuid::new_v4().to_string();
-                tracing::debug!("Created new session for rate limiting: {}", &new_session_id[..8]);
+                tracing::debug!(
+                    "Created new session for rate limiting: {}",
+                    &new_session_id[..8]
+                );
                 ClientIdentifier::Session(new_session_id.clone())
             }
         };
@@ -186,7 +193,7 @@ impl RateLimiter {
                 } else {
                     jar
                 };
-                
+
                 let response = next.run(req).await;
                 (jar, response)
             }
@@ -194,13 +201,13 @@ impl RateLimiter {
                 // For future enhancement: return challenge requirement
                 // For now, we'll still allow but log a warning
                 tracing::warn!("Client approaching rate limit threshold");
-                
+
                 let jar = if let ClientIdentifier::Session(session_id) = identifier {
                     jar.add(Self::create_session_cookie(session_id))
                 } else {
                     jar
                 };
-                
+
                 let response = next.run(req).await;
                 (jar, response)
             }
