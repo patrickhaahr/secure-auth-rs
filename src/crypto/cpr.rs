@@ -3,6 +3,7 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
 };
 use rand_core::OsRng;
+use zeroize::Zeroizing;
 
 /// Error type for CPR hashing operations
 #[derive(Debug)]
@@ -85,7 +86,7 @@ fn validate_cpr_format(cpr: &str) -> Result<(), CprHashError> {
     Ok(())
 }
 
-/// Creates an Argon2id instance with recommended paramenters for CPR hashing
+/// Creates an Argon2id instance with recommended parameters for CPR hashing
 ///
 /// Parameters:
 /// - Memory cost: 19456 KiB (19 MiB)
@@ -124,9 +125,10 @@ pub fn hash_cpr(cpr: &str) -> Result<String, CprHashError> {
     let argon2 = get_argon2_hasher()?;
     let salt = SaltString::generate(&mut OsRng);
 
-    let cpr_bytes = cpr.as_bytes();
+    // Use Zeroizing to ensure CPR bytes are cleared from memory
+    let cpr_bytes = Zeroizing::new(cpr.as_bytes().to_vec());
     let cpr_hash = argon2
-        .hash_password(cpr_bytes, &salt)
+        .hash_password(&cpr_bytes, &salt)
         .map_err(|_| CprHashError::HashingFailed)?;
 
     Ok(cpr_hash.to_string())
@@ -162,9 +164,10 @@ pub fn verify_cpr(cpr: &str, hash: &str) -> Result<bool, CprHashError> {
 
     let parsed_hash = PasswordHash::new(hash).map_err(|_| CprHashError::InvalidHash)?;
 
-    let cpr_bytes = cpr.as_bytes();
+    // Use Zeroizing to ensure CPR bytes are cleared from memory
+    let cpr_bytes = Zeroizing::new(cpr.as_bytes().to_vec());
 
-    match argon2.verify_password(cpr_bytes, &parsed_hash) {
+    match argon2.verify_password(&cpr_bytes, &parsed_hash) {
         Ok(_) => Ok(true),
         Err(_) => Ok(false),
     }
