@@ -8,7 +8,8 @@ aes-gcm = "0.10.3"
 argon2 = "0.5.3"
 async-trait = "0.1.83"
 axum = "0.8.6"
-axum-extra = { version = "0.10.0", features = ["typed-header"] }
+axum-extra = { version = "0.10.0", features = ["typed-header", "cookie"] }
+uuid = { version = "1.11", features = ["v4", "fast-rng"] }
 chrono = "0.4.39"
 dotenvy = "0.15.7"
 hex = "0.4.3"
@@ -24,6 +25,7 @@ totp-rs = { version = "5.7.0", features = ["otpauth", "qr"] }
 tower-http = { version = "0.6.6", features = ["fs"] }
 base64 = "0.22.1"
 tower_governor = "0.8.0"
+time = "0.3"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 zeroize = { version = "1.8.2", features = ["derive"] }

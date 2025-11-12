@@ -72,9 +72,9 @@ async fn main() {
     let rate_limited_routes = Router::new()
         .route("/api/login/totp/verify", post(routes::auth::totp_verify))
         .route("/api/login", post(routes::auth::login))
-        .layer(axum_middleware::from_fn(move |req, next| {
+        .layer(axum_middleware::from_fn(move |jar, req, next| {
             let limiter = rate_limiter.clone();
-            async move { limiter.middleware(req, next).await }
+            async move { limiter.middleware(jar, req, next).await }
         }));
 
     // Authenticated routes that require CPR submission
