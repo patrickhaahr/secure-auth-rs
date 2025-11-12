@@ -65,6 +65,10 @@ pub async fn insert_cpr_data(
 }
 
 pub async fn cpr_hash_exists(pool: &Pool<Sqlite>, cpr_hash: &str) -> Result<bool, sqlx::Error> {
+    use tokio::time::{sleep, Duration, Instant};
+
+    let start = Instant::now();
+    
     let result: (i64,) = sqlx::query_as(
         r#"
             SELECT COUNT(*) FROM cpr_data WHERE cpr_hash = ?
@@ -73,6 +77,12 @@ pub async fn cpr_hash_exists(pool: &Pool<Sqlite>, cpr_hash: &str) -> Result<bool
     .bind(cpr_hash)
     .fetch_one(pool)
     .await?;
+
+    // Ensure minimum 50ms response time to prevent timing attacks
+    let elapsed = start.elapsed();
+    if elapsed < Duration::from_millis(50) {
+        sleep(Duration::from_millis(50) - elapsed).await;
+    }
 
     Ok(result.0 > 0)
 }
@@ -132,7 +142,7 @@ pub async fn find_passkeys_by_account(
 pub async fn update_passkey_usage(
     pool: &Pool<Sqlite>,
     credential_id: &[u8],
-    new_sign_count: i32,
+    new_sign_count: u32,
 ) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         r#"
