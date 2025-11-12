@@ -25,6 +25,19 @@ pub async fn create_account(
     result
 }
 
+pub async fn account_exists(pool: &Pool<Sqlite>, id: &str) -> Result<bool, sqlx::Error> {
+    let result: (i64,) = sqlx::query_as(
+        r#"
+            SELECT COUNT(*) FROM accounts WHERE id = ?
+            "#,
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result.0 > 0)
+}
+
 pub async fn delete_account(pool: &Pool<Sqlite>, id: &str) -> Result<u64, sqlx::Error> {
     let result = sqlx::query(
         r#"
@@ -81,8 +94,8 @@ pub async fn insert_cpr_data(
     .await;
 
     match &result {
-        Ok(_) => tracing::info!(account_id = %account_id, "CPR data inserted and verified"),
-        Err(e) => tracing::error!(account_id = %account_id, error = %e, "Failed to insert CPR data"),
+        Ok(_) => tracing::info!("CPR data inserted and verified"),
+        Err(e) => tracing::error!(error = %e, "Failed to insert CPR data"),
     }
 
     result

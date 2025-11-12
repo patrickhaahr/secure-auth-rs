@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App - SecureAuth</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>You Are Authenticated!</h1>
+        <p>Welcome to the secure area.</p>
+        <button id="logoutBtn">Logout</button>
+    </div>
+    <script>
+        // Token lifecycle management
+        function isTokenExpired() {
+            const expiresAt = localStorage.getItem("auth_token_expires");
+            return !expiresAt || Date.now() > parseInt(expiresAt);
+        }
+
+        function logout() {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_token_expires");
+            window.location.href = "/login.html";
+        }
+
+        // Check token on page load
+        if (isTokenExpired() || !localStorage.getItem("auth_token")) {
+            alert("Session expired. Please login again.");
+            logout();
+        }
+
+        // Setup logout button
+        document.getElementById("logoutBtn").addEventListener("click", logout);
+    </script>
+</body>
+</html>

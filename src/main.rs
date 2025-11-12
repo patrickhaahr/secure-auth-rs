@@ -1,19 +1,25 @@
 mod crypto;
 mod db;
+mod middleware;
+mod routes;
 
-use axum::{Router, routing::get};
+use axum::{
+    extract::State,
+    middleware as axum_middleware,
+    Router,
+    routing::{get, post},
+    Json,
+};
 use sqlx::Pool;
 use sqlx::Sqlite;
-use std::sync::Arc;
-use tower_governor::{
-    governor::GovernorConfigBuilder, 
-    GovernorLayer,
-};
+use std::time::Duration;
+use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Arc<Pool<Sqlite>>,
+    pub db: Pool<Sqlite>,
+    pub csrf: middleware::csrf::CsrfProtection,
 }
 
 #[tokio::main]
@@ -37,33 +43,79 @@ async fn main() {
 
     tracing::info!("Database connected and migrations completed");
 
-    let app_state = AppState { db: Arc::new(pool) };
+    // Initialize CSRF protection
+    let csrf_protection = middleware::csrf::CsrfProtection::new();
 
-    // Configure rate limiting: 10 requests per second with burst of 20
-    let governor_conf = Arc::new(
-        GovernorConfigBuilder::default()
-            .per_second(10)
-            .burst_size(20)
-            .finish()
-            .expect("Failed to build rate limiter configuration")
-    );
+    let app_state = AppState {
+        db: pool,
+        csrf: csrf_protection.clone(),
+    };
 
-    // Create router with rate limiting
+    // Verify static directory exists
+    let static_dir = std::path::Path::new("static");
+    if !static_dir.exists() {
+        tracing::error!("Static directory not found at path: {:?}", static_dir);
+        panic!("Static directory 'static' does not exist in current directory");
+    }
+    let canonical_path = static_dir
+        .canonicalize()
+        .unwrap_or_else(|_| static_dir.to_path_buf());
+    tracing::info!("Serving static files from: {:?}", canonical_path);
+
+    // Configure rate limiting for TOTP endpoints
+    // 5 requests per minute per IP to prevent brute force attacks
+    let rate_limiter = middleware::rate_limit::RateLimiter::new(5, Duration::from_secs(60));
+
+    // Create router with proper middleware scoping
+    
+    // Rate-limited routes (TOTP verification and login)
+    let rate_limited_routes = Router::new()
+        .route("/api/login/totp/verify", post(routes::auth::totp_verify))
+        .route("/api/login", post(routes::auth::login))
+        .layer(axum_middleware::from_fn(move |req, next| {
+            let limiter = rate_limiter.clone();
+            async move { limiter.middleware(req, next).await }
+        }));
+
+    // CSRF-protected routes (all POST routes)
+    let csrf_protected_routes = Router::new()
+        .route("/api/signup", post(routes::auth::signup))
+        .route("/api/login/totp/setup", post(routes::auth::totp_setup))
+        .route("/api/account/cpr", post(routes::account::submit_cpr))
+        .layer(axum_middleware::from_fn(move |req, next| {
+            let csrf = csrf_protection.clone();
+            async move { csrf.middleware(req, next).await }
+        }));
+
+    // Combine all routes
     let app = Router::new()
         .route("/health", get(health_check))
-        .layer(GovernorLayer::new(governor_conf))
+        .route("/api/csrf-token", get(get_csrf_token))
+        .merge(rate_limited_routes)
+        .merge(csrf_protected_routes)
+        .fallback_service(ServeDir::new("static"))
         .with_state(app_state);
 
-    // Start server
+    // Start server with ConnectInfo to extract client IP
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
         .await
         .expect("Failed to bind to port 3000");
 
     tracing::info!("Server running on http://127.0.0.1:3000");
 
-    axum::serve(listener, app).await.expect("Server failed");
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .expect("Server failed");
 }
 
 async fn health_check() -> &'static str {
     "OK"
+}
+
+async fn get_csrf_token(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let token = state.csrf.generate_token();
+    Json(serde_json::json!({ "csrf_token": token }))
 }

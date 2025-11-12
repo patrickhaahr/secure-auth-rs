@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - SecureAuth</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Login / Setup</h1>
+        <div id="accountStep">
+            <label>Account ID:</label>
+            <input type="text" id="accountId" placeholder="16-character ID" maxlength="16">
+            <button id="continueBtn">Continue</button>
+        </div>
+        <div id="setupStep" style="display:none;">
+            <h2>First Time Setup</h2>
+            <button id="setupTotpBtn">Setup TOTP</button>
+        </div>
+        <div id="totpSetupStep" style="display:none;">
+            <h2>Scan QR Code</h2>
+            <div id="qrContainer">
+                <img id="qrImage" style="max-width: 300px; display:none;" alt="QR Code">
+                <p id="qrUri" style="display:none;"></p>
+            </div>
+            <p>Secret: <code id="secret" style="cursor:pointer;" title="Click to reveal">••••••••••••••••</code></p>
+            <br>
+            <label>Enter 6-digit code to verify:</label>
+            <input type="text" id="verifyCode" placeholder="123456" maxlength="6">
+            <button id="verifyBtn">Verify</button>
+        </div>
+        <div id="cprStep" style="display:none;">
+            <h2>Enter CPR Number</h2>
+            <input type="text" id="cpr" placeholder="DDMMYY-XXXX" maxlength="11">
+            <button id="submitCprBtn">Submit CPR</button>
+        </div>
+        <div id="loginStep" style="display:none;">
+            <h2>Enter TOTP Code</h2>
+            <input type="text" id="loginCode" placeholder="123456" maxlength="6">
+            <button id="loginBtn">Login</button>
+        </div>
+        <div id="success" style="display:none; color:green;">
+            <h2>Success!</h2>
+            <p id="successMsg"></p>
+        </div>
+    </div>
+
+    <script>
+        let currentAccountId = "";
+        let totpSecretData = null;
+        let secretRevealed = false;
+
+        // Fetch CSRF token helper
+        async function getCsrfToken() {
+            try {
+                const response = await fetch("/api/csrf-token");
+                const data = await response.json();
+                return data.csrf_token;
+            } catch (error) {
+                console.error("Failed to fetch CSRF token:", error);
+                return null;
+            }
+        }
+
+        // Token lifecycle management
+        function storeToken(token) {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const expiresAt = payload.exp * 1000;
+            localStorage.setItem("auth_token_expires", expiresAt);
+            localStorage.setItem("auth_token", token);
+        }
+
+        function isTokenExpired() {
+            const expiresAt = localStorage.getItem("auth_token_expires");
+            return !expiresAt || Date.now() > parseInt(expiresAt);
+        }
+
+        function logout() {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_token_expires");
+            window.location.href = "/login.html";
+        }
+
+        // Check token on page load
+        if (!isTokenExpired() && localStorage.getItem("auth_token")) {
+            window.location.href = "/auth.html";
+        }
+
+        document.getElementById("continueBtn").addEventListener("click", () => {
+            const accountId = document.getElementById("accountId").value.trim();
+            if (!accountId || accountId.length !== 16) {
+                alert("Account ID must be exactly 16 characters");
+                return;
+            }
+            if (!/^[A-Za-z0-9]{16}$/.test(accountId)) {
+                alert("Account ID must contain only letters and numbers");
+                return;
+            }
+            currentAccountId = accountId;
+            document.getElementById("accountStep").style.display = "none";
+            document.getElementById("setupStep").style.display = "block";
+        });
+
+        document.getElementById("setupTotpBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("setupTotpBtn");
+          if (btn.disabled) return;
+          btn.disabled = true;
+
+          try {
+              const csrfToken = await getCsrfToken();
+              if (!csrfToken) {
+                  alert("Failed to get security token. Please refresh the page.");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const response = await fetch("/api/login/totp/setup", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken
+                },
+                body: JSON.stringify({ account_id: currentAccountId })
+              });
+
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  alert(`Error: ${response.status} - ${errorText}`);
+                  console.error("TOTP setup error:", errorText);
+                  btn.disabled = false;
+                  return;
+              }
+
+              const data = await response.json();
+              totpSecretData = data.secret; // Store in memory only
+              
+              // Render QR code as image
+              if (data.qr_uri.startsWith("data:image") || data.qr_uri.startsWith("http")) {
+                  document.getElementById("qrImage").src = data.qr_uri;
+                  document.getElementById("qrImage").style.display = "block";
+                  document.getElementById("qrUri").style.display = "none";
+              } else {
+                  document.getElementById("qrUri").textContent = data.qr_uri;
+                  document.getElementById("qrUri").style.display = "block";
+                  document.getElementById("qrImage").style.display = "none";
+              }
+
+              // Setup secret reveal handler
+              const secretElem = document.getElementById("secret");
+              secretElem.onclick = () => {
+                  if (!secretRevealed) {
+                      secretElem.textContent = totpSecretData;
+                      secretRevealed = true;
+                      // Auto-hide after 30 seconds
+                      setTimeout(() => {
+                          secretElem.textContent = "••••••••••••••••";
+                          secretRevealed = false;
+                      }, 30000);
+                  }
+              };
+
+              document.getElementById("setupStep").style.display = "none";
+              document.getElementById("totpSetupStep").style.display = "block";
+          } catch (error) {
+              alert(`Error: ${error.message}`);
+              console.error("TOTP setup error:", error);
+              btn.disabled = false;
+          }
+        });
+
+        document.getElementById("verifyBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("verifyBtn");
+          if (btn.disabled) return;
+          btn.disabled = true;
+
+          try {
+              const code = document.getElementById("verifyCode").value.trim();
+              if (!code || !code.match(/^\d{6}$/)) {
+                  alert("Code must be exactly 6 digits");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const csrfToken = await getCsrfToken();
+              if (!csrfToken) {
+                  alert("Failed to get security token. Please refresh the page.");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const response = await fetch("/api/login/totp/verify", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken
+                },
+                body: JSON.stringify({ account_id: currentAccountId, code: code })
+              });
+
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  alert(`Error: ${response.status} - ${errorText}`);
+                  console.error("TOTP verify error:", errorText);
+                  btn.disabled = false;
+                  return;
+              }
+
+              const data = await response.json();
+              if (data.verified) {
+                document.getElementById("totpSetupStep").style.display = "none";
+                document.getElementById("cprStep").style.display = "block";
+              } else {
+                alert("Incorrect code!");
+                btn.disabled = false;
+              }
+          } catch (error) {
+              alert(`Error: ${error.message}`);
+              console.error("TOTP verify error:", error);
+              btn.disabled = false;
+          }
+        });
+
+        document.getElementById("submitCprBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("submitCprBtn");
+          if (btn.disabled) return;
+          btn.disabled = true;
+
+          try {
+              const cpr = document.getElementById("cpr").value.trim();
+              if (!cpr || !cpr.match(/^\d{6}-\d{4}$/)) {
+                  alert("CPR must be in format DDMMYY-XXXX");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const csrfToken = await getCsrfToken();
+              if (!csrfToken) {
+                  alert("Failed to get security token. Please refresh the page.");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const response = await fetch("/api/account/cpr", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken
+                },
+                body: JSON.stringify({ 
+                  account_id: currentAccountId,
+                  cpr: cpr })
+              });
+
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  alert(`Error: ${response.status} - ${errorText}`);
+                  console.error("CPR submission error:", errorText);
+                  btn.disabled = false;
+                  return;
+              }
+
+              const data = await response.json();
+              if (data.success) {
+                document.getElementById("cprStep").style.display = "none";
+                document.getElementById("loginStep").style.display = "block";
+                document.getElementById("successMsg").textContent = "Setup complete! You can now login.";
+              } else {
+                  alert("Failed to submit CPR: " + data.message);
+                  btn.disabled = false;
+              }
+          } catch (error) {
+              alert(`Error: ${error.message}`);
+              console.error("CPR submission error:", error);
+              btn.disabled = false;
+          }
+        });
+
+        document.getElementById("loginBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("loginBtn");
+          if (btn.disabled) return;
+          btn.disabled = true;
+
+          try {
+              const code = document.getElementById("loginCode").value.trim();
+              if (!code || !code.match(/^\d{6}$/)) {
+                  alert("TOTP code must be 6 digits");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const csrfToken = await getCsrfToken();
+              if (!csrfToken) {
+                  alert("Failed to get security token. Please refresh the page.");
+                  btn.disabled = false;
+                  return;
+              }
+
+              const response = await fetch("/api/login", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": csrfToken
+                },
+                body: JSON.stringify({ account_id: currentAccountId, code: code })
+              });
+
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  alert(`Error: ${response.status} - ${errorText}`);
+                  console.error("Login error:", errorText);
+                  btn.disabled = false;
+                  return;
+              }
+
+              const data = await response.json();
+              if (data.success) {
+                // Store JWT token with expiry
+                if (data.token) {
+                    storeToken(data.token);
+                }
+                // Show success message then redirect
+                document.getElementById("loginStep").style.display = "none";
+                document.getElementById("success").style.display = "block";
+                document.getElementById("successMsg").textContent = "Login successful! Redirecting...";
+                setTimeout(() => window.location.href = "/auth.html", 2000);
+              } else {
+                  alert("Failed to login: " + data.message);
+                  btn.disabled = false;
+              }
+          } catch (error) {
+              alert(`Error: ${error.message}`);
+              console.error("Login error:", error);
+              btn.disabled = false;
+          }
+        });
+    </script>
+</body>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signup - SecureAuth</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Create Account</h1>
+        <button id="signupBtn">Generate Account ID</button>
+        <div id="result" style="display:none; margin-top:20px;">
+            <h2>Your Account ID:</h2>
+            <p id="accountId" style="font-size:24px; font-weight:bold;"></p>
+            <p style="color:red;">Save this ID! You'll need it to login.</p>
+            <button id="copyBtn">Copy to Clipboard</button>
+            <br><br>
+            <a href="/login.html">Go to Login</a>
+        </div>
+    </div>
+    <script>
+        // Fetch CSRF token helper
+        async function getCsrfToken() {
+            try {
+                const response = await fetch("/api/csrf-token");
+                const data = await response.json();
+                return data.csrf_token;
+            } catch (error) {
+                console.error("Failed to fetch CSRF token:", error);
+                return null;
+            }
+        }
+
+        document.getElementById("signupBtn").addEventListener("click", async () => {
+            const btn = document.getElementById("signupBtn");
+            if (btn.disabled) return;
+            btn.disabled = true;
+
+            try {
+                const csrfToken = await getCsrfToken();
+                if (!csrfToken) {
+                    alert("Failed to get security token. Please refresh the page.");
+                    btn.disabled = false;
+                    return;
+                }
+
+                const response = await fetch("/api/signup", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": csrfToken
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    alert(`Error: ${response.status} - ${errorText}`);
+                    btn.disabled = false;
+                    return;
+                }
+
+                const data = await response.json();
+                document.getElementById("accountId").textContent = data.account_id;
+                document.getElementById("result").style.display = "block";
+                document.getElementById("signupBtn").style.display = "none";
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+                console.error("Signup error:", error);
+                btn.disabled = false;
+            }
+          });
+
+          document.getElementById("copyBtn").addEventListener("click", async () => {
+            const accountId = document.getElementById("accountId").textContent;
+            if (!navigator.clipboard) {
+                alert("Clipboard not available. Please copy manually: " + accountId);
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(accountId);
+                alert("Copied to clipboard!");
+            } catch (error) {
+                alert("Failed to copy. Please copy manually: " + accountId);
+                console.error("Clipboard error:", error);
+            }
+          });
+    </script>
+</body>
+</html>
