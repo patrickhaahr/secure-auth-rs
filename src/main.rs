@@ -80,6 +80,7 @@ async fn main() {
     // Authenticated routes that require CPR submission
     // These routes are protected by CSRF + Auth + CPR verification
     let cpr_protected_routes = Router::new()
+        .route("/api/admin/check", get(routes::admin::check_admin_access))
         // Future authenticated endpoints will go here
         // Example: .route("/api/account/profile", get(routes::account::get_profile))
         .layer(axum_middleware::from_fn_with_state(

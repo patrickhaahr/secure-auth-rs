@@ -222,6 +222,11 @@ mod tests {
 
     #[test]
     fn test_hash_cpr_produces_valid_phc_format() {
+        // Set test pepper for this test
+        unsafe {
+            std::env::set_var("CPR_PEPPER", "test_pepper_for_phc_format");
+        }
+        
         let cpr = "010190-1234";
         let hash_str = hash_cpr(cpr).expect("Failed to hash CPR");
 

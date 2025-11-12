@@ -19,6 +19,7 @@
         <div id="auth-view" style="display: none;">
             <h1>You Are Authenticated!</h1>
             <p>Welcome to the secure area.</p>
+            <button id="adminBtn">Admin Panel</button>
             <button id="logoutBtn">Logout</button>
         </div>
     </div>
@@ -45,8 +46,13 @@
                 document.getElementById("unauth-view").style.display = "none";
                 document.getElementById("auth-view").style.display = "block";
                 
-                // Setup logout button
-                document.getElementById("logoutBtn").addEventListener("click", logout);
+                 // Setup logout button
+                 document.getElementById("logoutBtn").addEventListener("click", logout);
+                 
+                 // Setup admin button
+                 document.getElementById("adminBtn").addEventListener("click", () => {
+                     window.location.href = "/admin.html";
+                 });
             } else {
                 // Show unauthenticated view
                 document.getElementById("unauth-view").style.display = "block";
