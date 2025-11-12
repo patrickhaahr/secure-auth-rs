@@ -13,7 +13,8 @@ pub struct Account {
 
 /// CPR data model - Hashed CPR information
 /// Maps to: cpr_data table
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+/// Note: Debug and Clone deliberately omitted to prevent PII leakage
+#[derive(Serialize, Deserialize, FromRow)]
 pub struct CprData {
     /// Foreign key to accounts.id
     pub account_id: String,
@@ -21,6 +22,16 @@ pub struct CprData {
     pub cpr_hash: String,
     /// ISO 8601 timestamp
     pub verified_at: String,
+}
+
+impl std::fmt::Debug for CprData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CprData")
+            .field("account_id", &self.account_id)
+            .field("cpr_hash", &"[REDACTED]")
+            .field("verified_at", &self.verified_at)
+            .finish()
+    }
 }
 
 /// Passkey model - WebAuthn credentials
@@ -35,8 +46,8 @@ pub struct Passkey {
     pub credential_id: Vec<u8>,
     /// COSE public key bytes
     pub public_key: Vec<u8>,
-    /// Signature counter for replay attack prevention
-    pub sign_count: i32,
+    /// Signature counter for replay attack prevention (WebAuthn spec: u32)
+    pub sign_count: u32,
     /// 16-byte authenticator AAGUID
     pub aaguid: Vec<u8>,
     /// Attestation type: 'none', 'indirect', 'direct'
@@ -51,7 +62,8 @@ pub struct Passkey {
 
 /// TOTP secret model - Time-based OTP configuration
 /// Maps to: totp_secrets table
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+/// Note: Debug and Clone deliberately omitted to prevent secret leakage
+#[derive(Serialize, Deserialize, FromRow)]
 pub struct TotpSecret {
     /// Foreign key to accounts.id (primary key)
     pub account_id: String,
@@ -67,6 +79,20 @@ pub struct TotpSecret {
     pub is_verified: bool,
     /// ISO 8601 timestamp
     pub created_at: String,
+}
+
+impl std::fmt::Debug for TotpSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TotpSecret")
+            .field("account_id", &self.account_id)
+            .field("secret_encrypted", &"[REDACTED]")
+            .field("algorithm", &self.algorithm)
+            .field("digits", &self.digits)
+            .field("period", &self.period)
+            .field("is_verified", &self.is_verified)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 /// Account role model - Admin flags
