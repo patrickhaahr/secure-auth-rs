@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Ensure cleanup of temporary files on exit
+trap 'rm -f "$TEMP_FILE"' EXIT
+
 # Check for required dependencies
 for cmd in curl jq; do
   if ! command -v "$cmd" &> /dev/null; then
@@ -23,8 +26,11 @@ echo ""
 echo "Testing that CPR submission requires authentication..."
 echo ""
 
+# Create secure temporary file
+TEMP_FILE=$(mktemp)
+
 # Get CSRF token
-CSRF_TOKEN=$(curl -s "$BASE_URL/api/csrf-token" 2>/dev/null | jq -r '.csrf_token' 2>/dev/null)
+CSRF_TOKEN=$(curl -s "$BASE_URL/api/csrf-token" | jq -r '.csrf_token')
 if [ -z "$CSRF_TOKEN" ] || [ "$CSRF_TOKEN" = "null" ]; then
   echo "✗ FAILED: Could not retrieve CSRF token"
   echo "Server response may be malformed or endpoint unavailable"
@@ -32,11 +38,14 @@ if [ -z "$CSRF_TOKEN" ] || [ "$CSRF_TOKEN" = "null" ]; then
 fi
 
 # Try to submit CPR without JWT token using reliable parsing
-HTTP_CODE=$(curl -s -o /tmp/cpr_response.txt -w "%{http_code}" -X POST "$BASE_URL/api/account/cpr" \
+response=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/api/account/cpr" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -d '{"account_id":"testaccount1234","cpr":"010190-1234"}')
-BODY=$(cat /tmp/cpr_response.txt)
+
+# Split response into body and status code
+BODY=$(echo "$response" | sed '$d')
+HTTP_CODE=$(echo "$response" | tail -1)
 
 # Trim whitespace from HTTP_CODE
 HTTP_CODE=$(echo "$HTTP_CODE" | tr -d '[:space:]')
@@ -49,11 +58,9 @@ echo ""
 
 if [ "$HTTP_CODE" = "401" ]; then
   echo "✓ SUCCESS: CPR endpoint correctly requires authentication"
-  rm -f /tmp/cpr_response.txt
   exit 0
 else
   echo "✗ FAILED: CPR endpoint should require authentication"
-  rm -f /tmp/cpr_response.txt
   exit 1
 fi
 

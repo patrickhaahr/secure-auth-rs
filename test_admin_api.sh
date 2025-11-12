@@ -5,6 +5,14 @@
 
 set -e
 
+# Check dependencies
+for cmd in curl jq; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "FAIL: $cmd not found. Please install it."
+        exit 1
+    fi
+done
+
 BASE_URL="http://127.0.0.1:3000"
 CSRF_TOKEN=""
 
@@ -24,19 +32,32 @@ print_error() {
 
 # Get CSRF token
 get_csrf_token() {
-    CSRF_TOKEN=$(curl -s -X GET "${BASE_URL}/api/csrf-token" | jq -r '.csrf_token' 2>/dev/null)
+    CSRF_TOKEN=$(curl -s -X GET "${BASE_URL}/api/csrf-token" | jq -r '.csrf_token')
     if [ "$CSRF_TOKEN" = "null" ] || [ -z "$CSRF_TOKEN" ]; then
+        echo "Error: Failed to get CSRF token" >&2
         return 1
     fi
     return 0
 }
 
+# Extract HTTP status code reliably
+extract_http_status() {
+    local response="$1"
+    echo "$response" | tail -1
+}
+
+# Extract response body
+extract_body() {
+    local response="$1"
+    echo "$response" | sed '$d'
+}
+
 # Test unauthenticated access
 test_unauthenticated() {
     echo -n "GET /api/admin/users (unauth): "
-    response=$(curl -s -w "%{http_code}" -X GET "${BASE_URL}/api/admin/users" \
+    response=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/api/admin/users" \
         -H "Content-Type: application/json")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; then
         print_success
@@ -45,9 +66,9 @@ test_unauthenticated() {
     fi
     
     echo -n "DELETE /api/admin/users/test-id (unauth): "
-    response=$(curl -s -w "%{http_code}" -X DELETE "${BASE_URL}/api/admin/users/test-id" \
+    response=$(curl -s -w "\n%{http_code}" -X DELETE "${BASE_URL}/api/admin/users/test-id" \
         -H "Content-Type: application/json")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; then
         print_success
@@ -63,11 +84,11 @@ test_invalid_token() {
         print_error
         return
     fi
-    response=$(curl -s -w "%{http_code}" -X GET "${BASE_URL}/api/admin/users" \
+    response=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/api/admin/users" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer invalid_token_12345" \
         -H "X-CSRF-Token: $CSRF_TOKEN")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ]; then
         print_success
@@ -80,11 +101,11 @@ test_invalid_token() {
         print_error
         return
     fi
-    response=$(curl -s -w "%{http_code}" -X DELETE "${BASE_URL}/api/admin/users/test-id" \
+    response=$(curl -s -w "\n%{http_code}" -X DELETE "${BASE_URL}/api/admin/users/test-id" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer invalid_token_12345" \
         -H "X-CSRF-Token: $CSRF_TOKEN")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ]; then
         print_success
@@ -96,10 +117,10 @@ test_invalid_token() {
 # Test CSRF protection
 test_csrf_protection() {
     echo -n "GET /api/admin/users (no CSRF): "
-    response=$(curl -s -w "%{http_code}" -X GET "${BASE_URL}/api/admin/users" \
+    response=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/api/admin/users" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer dummy_token")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ] || [ "$http_code" = "403" ] || [ "$http_code" = "400" ]; then
         print_success
@@ -111,9 +132,9 @@ test_csrf_protection() {
 # Test admin check endpoint
 test_admin_check() {
     echo -n "GET /api/admin/check (unauth): "
-    response=$(curl -s -w "%{http_code}" -X GET "${BASE_URL}/api/admin/check" \
+    response=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/api/admin/check" \
         -H "Content-Type: application/json")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ]; then
         print_success
@@ -122,10 +143,10 @@ test_admin_check() {
     fi
     
     echo -n "GET /api/admin/check (invalid token): "
-    response=$(curl -s -w "%{http_code}" -X GET "${BASE_URL}/api/admin/check" \
+    response=$(curl -s -w "\n%{http_code}" -X GET "${BASE_URL}/api/admin/check" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer invalid_token")
-    http_code="${response: -3}"
+    http_code=$(extract_http_status "$response")
     
     if [ "$http_code" = "401" ]; then
         print_success

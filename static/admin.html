@@ -46,7 +46,7 @@
     <script>
         function isTokenExpired() {
             const expiresAt = localStorage.getItem("auth_token_expires");
-            return !expiresAt || Date.now() > parseInt(expiresAt);
+            return !expiresAt || Date.now() >= parseInt(expiresAt);
         }
 
         function logout() {
@@ -110,21 +110,63 @@
             const tbody = document.getElementById("users-tbody");
             const table = document.getElementById("users-table");
             
-            tbody.innerHTML = "";
+            // Clear existing content
+            while (tbody.firstChild) {
+                tbody.removeChild(tbody.firstChild);
+            }
             
             if (users.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center;">No users found</td></tr>';
+                const row = document.createElement("tr");
+                const cell = document.createElement("td");
+                cell.colSpan = 4;
+                cell.style.padding = "10px";
+                cell.style.textAlign = "center";
+                cell.textContent = "No users found";
+                row.appendChild(cell);
+                tbody.appendChild(row);
             } else {
                 users.forEach(user => {
                     const row = document.createElement("tr");
-                    row.innerHTML = `
-                        <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">${user.id}</td>
-                        <td style="padding: 10px; border: 1px solid #ddd;">${new Date(user.created_at).toLocaleString()}</td>
-                        <td style="padding: 10px; border: 1px solid #ddd;">${user.is_verified ? '✅ Verified' : '❌ Not Verified'}</td>
-                        <td style="padding: 10px; border: 1px solid #ddd;">
-                            <button onclick="deleteUser('${user.id}')" style="background-color: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer;">Delete</button>
-                        </td>
-                    `;
+                    
+                    // ID cell
+                    const idCell = document.createElement("td");
+                    idCell.style.padding = "10px";
+                    idCell.style.border = "1px solid #ddd";
+                    idCell.style.fontFamily = "monospace";
+                    idCell.textContent = user.id;
+                    row.appendChild(idCell);
+                    
+                    // Created At cell
+                    const createdAtCell = document.createElement("td");
+                    createdAtCell.style.padding = "10px";
+                    createdAtCell.style.border = "1px solid #ddd";
+                    createdAtCell.textContent = new Date(user.created_at).toLocaleString();
+                    row.appendChild(createdAtCell);
+                    
+                    // Verified Status cell
+                    const statusCell = document.createElement("td");
+                    statusCell.style.padding = "10px";
+                    statusCell.style.border = "1px solid #ddd";
+                    statusCell.textContent = user.is_verified ? '✅ Verified' : '❌ Not Verified';
+                    row.appendChild(statusCell);
+                    
+                    // Actions cell
+                    const actionsCell = document.createElement("td");
+                    actionsCell.style.padding = "10px";
+                    actionsCell.style.border = "1px solid #ddd";
+                    
+                    const deleteButton = document.createElement("button");
+                    deleteButton.textContent = "Delete";
+                    deleteButton.style.backgroundColor = "#dc3545";
+                    deleteButton.style.color = "white";
+                    deleteButton.style.border = "none";
+                    deleteButton.style.padding = "5px 10px";
+                    deleteButton.style.cursor = "pointer";
+                    deleteButton.addEventListener("click", () => deleteUser(user.id));
+                    
+                    actionsCell.appendChild(deleteButton);
+                    row.appendChild(actionsCell);
+                    
                     tbody.appendChild(row);
                 });
             }
@@ -160,7 +202,8 @@
                     await fetchUsers();
                 } else {
                     const errorText = await response.text();
-                    throw new Error(`Failed to delete user: ${response.status} - ${errorText}`);
+                    console.error(`Failed to delete user: ${response.status} - ${errorText}`);
+                    throw new Error("Failed to delete user. Please try again.");
                 }
             } catch (error) {
                 console.error("Error deleting user:", error);

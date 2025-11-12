@@ -38,31 +38,43 @@
         }
 
         function checkAuthStatus() {
-            const token = localStorage.getItem("auth_token");
-            const expired = isTokenExpired();
-            
-            if (token && !expired) {
-                // Show authenticated view
-                document.getElementById("unauth-view").style.display = "none";
-                document.getElementById("auth-view").style.display = "block";
+            try {
+                const token = localStorage.getItem("auth_token");
+                const expired = isTokenExpired();
                 
-                 // Setup logout button
-                 document.getElementById("logoutBtn").addEventListener("click", logout);
-                 
-                 // Setup admin button
-                 document.getElementById("adminBtn").addEventListener("click", () => {
-                     window.location.href = "/admin.html";
-                 });
-            } else {
-                // Show unauthenticated view
+                if (token && !expired) {
+                    // Show authenticated view
+                    document.getElementById("unauth-view").style.display = "none";
+                    document.getElementById("auth-view").style.display = "block";
+                     
+                     // Setup logout button (remove old listener to prevent duplication)
+                     const logoutBtn = document.getElementById("logoutBtn");
+                     const newLogoutBtn = logoutBtn.cloneNode(true);
+                     logoutBtn.parentNode.replaceChild(newLogoutBtn, logoutBtn);
+                     document.getElementById("logoutBtn").addEventListener("click", logout);
+                     
+                     // Setup admin button (remove old listener to prevent duplication)
+                     const adminBtn = document.getElementById("adminBtn");
+                     const newAdminBtn = adminBtn.cloneNode(true);
+                     adminBtn.parentNode.replaceChild(newAdminBtn, adminBtn);
+                     document.getElementById("adminBtn").addEventListener("click", () => {
+                         window.location.href = "/admin.html";
+                     });
+                } else {
+                    // Show unauthenticated view
+                    document.getElementById("unauth-view").style.display = "block";
+                    document.getElementById("auth-view").style.display = "none";
+                    
+                    // Clear invalid tokens
+                    if (token) {
+                        localStorage.removeItem("auth_token");
+                        localStorage.removeItem("auth_token_expires");
+                    }
+                }
+            } catch (e) {
+                console.error("Error accessing localStorage:", e);
                 document.getElementById("unauth-view").style.display = "block";
                 document.getElementById("auth-view").style.display = "none";
-                
-                // Clear invalid tokens
-                if (token) {
-                    localStorage.removeItem("auth_token");
-                    localStorage.removeItem("auth_token_expires");
-                }
             }
         }
 
