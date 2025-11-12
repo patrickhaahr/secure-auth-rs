@@ -1202,6 +1202,7 @@ dependencies = [
  "dotenvy",
  "hex",
  "rand 0.10.0-rc.5",
+ "rand_core 0.6.4",
  "serde",
  "sqlx",
  "tokio",
