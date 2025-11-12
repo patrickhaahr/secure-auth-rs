@@ -147,6 +147,29 @@ pub async fn has_cpr(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx
     Ok(result.0 > 0)
 }
 
+pub async fn get_cpr_hash_by_account(pool: &Pool<Sqlite>, account_id: &str) -> Result<Option<String>, sqlx::Error> {
+    use tokio::time::{sleep, Duration, Instant};
+
+    let start = Instant::now();
+    
+    let result: Option<(String,)> = sqlx::query_as(
+        r#"
+            SELECT cpr_hash FROM cpr_data WHERE account_id = ?
+            "#,
+    )
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
+
+    // Ensure minimum 50ms response time to prevent timing attacks
+    let elapsed = start.elapsed();
+    if elapsed < Duration::from_millis(50) {
+        sleep(Duration::from_millis(50) - elapsed).await;
+    }
+
+    Ok(result.map(|r| r.0))
+}
+
 // Account verification status
 pub async fn is_account_verified(pool: &Pool<Sqlite>, account_id: &str) -> Result<bool, sqlx::Error> {
     let result: Option<(bool,)> = sqlx::query_as(

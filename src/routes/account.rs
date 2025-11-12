@@ -248,38 +248,39 @@ pub async fn verify_cpr_for_login(
         return Err((StatusCode::BAD_REQUEST, "Invalid account".to_string()));
     }
 
-    // Hash the CPR number once for both validation and comparison
-    let cpr_hash = cpr::hash_cpr(&cpr).map_err(|e| {
-        tracing::error!(error = %e, "Failed to hash CPR for verification");
-        (StatusCode::BAD_REQUEST, "Invalid CPR format".to_string())
-    })?;
-    
-    let cpr_matches_count: i64 = sqlx::query_scalar!(
-        r#"
-            SELECT COUNT(*)
-            FROM cpr_data 
-            WHERE account_id = ? AND cpr_hash = ?
-            "#,
-        account_id,
-        cpr_hash
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "Failed to verify CPR match");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
-    })?;
-    
-    let cpr_matches = cpr_matches_count > 0;
+    // Get stored CPR hash for this account
+    let stored_cpr_hash = repository::get_cpr_hash_by_account(&state.db, &account_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to retrieve stored CPR hash");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
+        })?;
 
-    if cpr_matches {
+    let stored_cpr_hash = match stored_cpr_hash {
+        Some(hash) => hash,
+        None => {
+            tracing::warn!(account_id = %account_id, "CPR verification failed - no CPR stored");
+            return Ok(Json(CprVerifyResponse {
+                success: false,
+                message: "Invalid CPR".to_string(),
+            }));
+        }
+    };
+
+    // Verify CPR against stored hash using peppered verification
+    let is_valid = cpr::verify_cpr(&cpr, &stored_cpr_hash).map_err(|e| {
+        tracing::error!(error = %e, "Failed to verify CPR");
+        (StatusCode::INTERNAL_SERVER_ERROR, "CPR verification failed".to_string())
+    })?;
+
+    if is_valid {
         tracing::info!(account_id = %account_id, "CPR verified successfully for login");
         Ok(Json(CprVerifyResponse {
             success: true,
             message: "CPR verified".to_string(),
         }))
     } else {
-        tracing::warn!(account_id = %account_id, "CPR verification failed - no match");
+        tracing::warn!(account_id = %account_id, "CPR verification failed - incorrect CPR");
         Ok(Json(CprVerifyResponse {
             success: false,
             message: "Invalid CPR".to_string(),

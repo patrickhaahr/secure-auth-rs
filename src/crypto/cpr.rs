@@ -4,6 +4,7 @@ use argon2::{
 };
 use rand_core::OsRng;
 use zeroize::Zeroizing;
+use std::env;
 
 /// Error type for CPR hashing operations
 #[derive(Debug)]
@@ -13,6 +14,7 @@ pub enum CprHashError {
     VerificationFailed,
     InvalidHash,
     InvalidFormat,
+    MissingPepper,
 }
 
 impl std::fmt::Display for CprHashError {
@@ -23,6 +25,7 @@ impl std::fmt::Display for CprHashError {
             CprHashError::VerificationFailed => write!(f, "CPR verification failed"),
             CprHashError::InvalidHash => write!(f, "Invalid hash"),
             CprHashError::InvalidFormat => write!(f, "Invalid CPR format"),
+            CprHashError::MissingPepper => write!(f, "CPR pepper is not configured"),
         }
     }
 }
@@ -74,16 +77,32 @@ fn validate_cpr_format(cpr: &str) -> Result<(), CprHashError> {
     let _year: u32 = date_part[4..6].parse().map_err(|_| CprHashError::InvalidFormat)?;
 
     // Validate day range
-    if day < 1 || day > 31 {
+    if !(1..=31).contains(&day) {
         return Err(CprHashError::InvalidFormat);
     }
 
     // Validate month range
-    if month < 1 || month > 12 {
+    if !(1..=12).contains(&month) {
         return Err(CprHashError::InvalidFormat);
     }
 
     Ok(())
+}
+
+/// Loads CPR pepper from environment variables
+///
+/// # Returns
+/// * `Ok(String)` - The pepper string
+/// * `Err(CprHashError::MissingPepper)` - if pepper is not configured
+///
+/// # Security
+/// - Pepper must be kept secret and never logged
+/// - Should be a strong random string (32+ characters)
+fn load_cpr_pepper() -> Result<String, CprHashError> {
+    env::var("CPR_PEPPER").map_err(|_| {
+        tracing::error!("CPR_PEPPER environment variable is not set");
+        CprHashError::MissingPepper
+    })
 }
 
 /// Creates an Argon2id instance with recommended parameters for CPR hashing
@@ -101,7 +120,7 @@ fn get_argon2_hasher() -> Result<Argon2<'static>, CprHashError> {
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
 }
 
-/// Hashes a CPR number using Argon2id
+/// Hashes a CPR number using Argon2id with pepper
 ///
 /// # Arguments
 /// * `cpr` - format: "DDMMYY-XXXX"
@@ -112,6 +131,7 @@ fn get_argon2_hasher() -> Result<Argon2<'static>, CprHashError> {
 ///
 /// # Security
 /// - Uses cryptographically secure random salt
+/// - Combines CPR with server-side pepper before hashing
 /// - Returns PHC format: $argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>
 /// - Safe to store in database
 /// # Example
@@ -122,23 +142,27 @@ fn get_argon2_hasher() -> Result<Argon2<'static>, CprHashError> {
 pub fn hash_cpr(cpr: &str) -> Result<String, CprHashError> {
     validate_cpr_format(cpr)?;
 
+    let pepper = load_cpr_pepper()?;
     let argon2 = get_argon2_hasher()?;
     let salt = SaltString::generate(&mut OsRng);
 
-    // Use Zeroizing to ensure CPR bytes are cleared from memory
-    let cpr_bytes = Zeroizing::new(cpr.as_bytes().to_vec());
+    // Combine CPR with pepper: format: cpr:pepper
+    let peppered_input = format!("{}:{}", cpr, pepper);
+    
+    // Use Zeroizing to ensure peppered input bytes are cleared from memory
+    let peppered_bytes = Zeroizing::new(peppered_input.as_bytes().to_vec());
     let cpr_hash = argon2
-        .hash_password(&cpr_bytes, &salt)
+        .hash_password(&peppered_bytes, &salt)
         .map_err(|_| {
             tracing::warn!("CPR hashing failed");
             CprHashError::HashingFailed
         })?;
 
-    tracing::info!("CPR hashed successfully");
+    tracing::info!("CPR hashed successfully with pepper");
     Ok(cpr_hash.to_string())
 }
 
-/// Verifies a CPR number against a stored Argon2id hash
+/// Verifies a CPR number against a stored Argon2id hash with pepper
 ///
 /// # Arguments
 /// * cpr - The CPR number to verify
@@ -153,6 +177,7 @@ pub fn hash_cpr(cpr: &str) -> Result<String, CprHashError> {
 /// - Constant-time comparison (handled by Argon2)
 /// - Extracts and uses salt from stored hash
 /// - Validates algorithm, version and params
+/// - Uses same pepper combination as hashing
 ///
 /// # Example
 /// ```
@@ -164,6 +189,7 @@ pub fn hash_cpr(cpr: &str) -> Result<String, CprHashError> {
 pub fn verify_cpr(cpr: &str, hash: &str) -> Result<bool, CprHashError> {
     validate_cpr_format(cpr)?;
 
+    let pepper = load_cpr_pepper()?;
     let argon2 = get_argon2_hasher()?;
 
     let parsed_hash = PasswordHash::new(hash).map_err(|_| {
@@ -171,12 +197,15 @@ pub fn verify_cpr(cpr: &str, hash: &str) -> Result<bool, CprHashError> {
         CprHashError::InvalidHash
     })?;
 
-    // Use Zeroizing to ensure CPR bytes are cleared from memory
-    let cpr_bytes = Zeroizing::new(cpr.as_bytes().to_vec());
+    // Combine CPR with pepper using same format as hashing
+    let peppered_input = format!("{}:{}", cpr, pepper);
+    
+    // Use Zeroizing to ensure peppered input bytes are cleared from memory
+    let peppered_bytes = Zeroizing::new(peppered_input.as_bytes().to_vec());
 
-    match argon2.verify_password(&cpr_bytes, &parsed_hash) {
+    match argon2.verify_password(&peppered_bytes, &parsed_hash) {
         Ok(_) => {
-            tracing::info!("CPR verification successful");
+            tracing::info!("CPR verification successful with pepper");
             Ok(true)
         }
         Err(_) => {
@@ -392,5 +421,47 @@ mod tests {
         // Test various valid dates
         assert!(hash_cpr("150685-1234").is_ok(), "Valid mid-range date");
         assert!(hash_cpr("291095-5678").is_ok(), "Valid October date");
+    }
+
+    #[test]
+    fn test_pepper_based_cpr_hashing() {
+        // Set test pepper
+        unsafe {
+            std::env::set_var("CPR_PEPPER", "test_pepper_for_testing");
+        }
+        
+        let cpr = "010190-1234";
+        let wrong_cpr = "020190-5678";
+        
+        // Test hashing
+        let hash1 = hash_cpr(cpr).expect("First hash should succeed");
+        let hash2 = hash_cpr(cpr).expect("Second hash should succeed");
+        
+        // Hashes should be different due to random salt
+        assert_ne!(hash1, hash2, "Hashes should be different due to random salt");
+        
+        // Both should verify correctly
+        assert!(verify_cpr(cpr, &hash1).expect("First verification should succeed"), 
+                "First hash should verify");
+        assert!(verify_cpr(cpr, &hash2).expect("Second verification should succeed"), 
+                "Second hash should verify");
+        
+        // Wrong CPR should not verify
+        assert!(!verify_cpr(wrong_cpr, &hash1).expect("Wrong CPR verification should succeed"), 
+                "Wrong CPR should not verify");
+        
+        // Test that different peppers produce different hashes
+        unsafe {
+            std::env::set_var("CPR_PEPPER", "different_pepper");
+        }
+        let hash_with_different_pepper = hash_cpr(cpr).expect("Hash with different pepper should succeed");
+        
+        unsafe {
+            std::env::set_var("CPR_PEPPER", "test_pepper_for_testing");
+        }
+        let hash_with_original_pepper = hash_cpr(cpr).expect("Hash with original pepper should succeed");
+        
+        assert_ne!(hash_with_different_pepper, hash_with_original_pepper, 
+                   "Different peppers should produce different hashes");
     }
 }
