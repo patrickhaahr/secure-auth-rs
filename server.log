@@ -1,5 +1,0 @@
-[2m2025-11-12T17:45:23.968997Z[0m [32m INFO[0m [2msecure_auth_rs[0m[2m:[0m Database connected and migrations completed
-[2m2025-11-12T17:45:23.969035Z[0m [32m INFO[0m [2msecure_auth_rs[0m[2m:[0m Serving static files from: "/home/patrickhaahr/dev/secure_auth_rs/static"
-[2m2025-11-12T17:45:23.969169Z[0m [32m INFO[0m [2msecure_auth_rs[0m[2m:[0m Server running on http://127.0.0.1:3000
-[2m2025-11-12T17:45:26.986335Z[0m [32m INFO[0m [2msecure_auth_rs::db::repository[0m[2m:[0m Account created [3maccount_id[0m[2m=[0mnTn9KXThaI7V9HoS
-[2m2025-11-12T17:45:26.986367Z[0m [32m INFO[0m [2msecure_auth_rs::routes::auth[0m[2m:[0m New account created [3maccount_id[0m[2m=[0mnTn9KXThaI7V9HoS

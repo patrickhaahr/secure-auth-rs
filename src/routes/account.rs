@@ -248,16 +248,10 @@ pub async fn verify_cpr_for_login(
         return Err((StatusCode::BAD_REQUEST, "Invalid account".to_string()));
     }
 
-    // Hash the CPR number to validate format
-    let _cpr_hash = cpr::hash_cpr(&cpr).map_err(|e| {
+    // Hash the CPR number once for both validation and comparison
+    let cpr_hash = cpr::hash_cpr(&cpr).map_err(|e| {
         tracing::error!(error = %e, "Failed to hash CPR for verification");
         (StatusCode::BAD_REQUEST, "Invalid CPR format".to_string())
-    })?;
-
-    // Check if this CPR hash exists for the account
-    let cpr_hash = cpr::hash_cpr(&cpr).map_err(|e| {
-        tracing::error!(error = %e, "Failed to hash CPR for comparison");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Failed to verify CPR".to_string())
     })?;
     
     let cpr_matches_count: i64 = sqlx::query_scalar!(

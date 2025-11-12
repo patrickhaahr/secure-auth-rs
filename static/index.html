@@ -8,9 +8,60 @@
 </head>
 <body>
     <div class="container">
-        <h1>Welcome to SecureAuth</h1>
-        <p><a href="/signup.html">Create Account</a></p>
-        <p><a href="/login.html">Login</a></p>
+        <!-- Unauthenticated view -->
+        <div id="unauth-view">
+            <h1>Welcome to SecureAuth</h1>
+            <p><a href="/signup.html">Create Account</a></p>
+            <p><a href="/login.html">Login</a></p>
+        </div>
+        
+        <!-- Authenticated view -->
+        <div id="auth-view" style="display: none;">
+            <h1>You Are Authenticated!</h1>
+            <p>Welcome to the secure area.</p>
+            <button id="logoutBtn">Logout</button>
+        </div>
     </div>
+    
+    <script>
+        // Token lifecycle management
+        function isTokenExpired() {
+            const expiresAt = localStorage.getItem("auth_token_expires");
+            return !expiresAt || Date.now() > parseInt(expiresAt);
+        }
+
+        function logout() {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_token_expires");
+            window.location.href = "/login.html";
+        }
+
+        function checkAuthStatus() {
+            const token = localStorage.getItem("auth_token");
+            const expired = isTokenExpired();
+            
+            if (token && !expired) {
+                // Show authenticated view
+                document.getElementById("unauth-view").style.display = "none";
+                document.getElementById("auth-view").style.display = "block";
+                
+                // Setup logout button
+                document.getElementById("logoutBtn").addEventListener("click", logout);
+            } else {
+                // Show unauthenticated view
+                document.getElementById("unauth-view").style.display = "block";
+                document.getElementById("auth-view").style.display = "none";
+                
+                // Clear invalid tokens
+                if (token) {
+                    localStorage.removeItem("auth_token");
+                    localStorage.removeItem("auth_token_expires");
+                }
+            }
+        }
+
+        // Check auth status on page load
+        checkAuthStatus();
+    </script>
 </body>
 </html>
