@@ -4,16 +4,9 @@ mod middleware;
 mod routes;
 mod tls;
 
-use axum::{
-    Json, Router,
-    extract::State,
-    middleware as axum_middleware,
-    routing::{get, post},
-};
 use sqlx::Pool;
 use sqlx::Sqlite;
 use std::time::Duration;
-use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Clone)]
@@ -66,95 +59,8 @@ async fn main() {
     // 5 requests per minute per IP to prevent brute force attacks
     let rate_limiter = middleware::rate_limit::RateLimiter::new(5, Duration::from_secs(60));
 
-    // Create router with proper middleware scoping
-
-    // Rate-limited routes (TOTP verification and login)
-    let rate_limited_routes = Router::new()
-        .route("/api/login/totp/verify", post(routes::auth::totp_verify))
-        .route("/api/login", post(routes::auth::login))
-        .route("/api/logout", post(routes::auth::logout))
-        .layer(axum_middleware::from_fn(move |jar, req, next| {
-            let limiter = rate_limiter.clone();
-            async move { limiter.middleware(jar, req, next).await }
-        }));
-
-    // Authenticated routes that require CPR submission
-    // These routes are protected by CSRF + Auth + CPR verification
-    let cpr_protected_routes = Router::new()
-        .route("/api/admin/check", get(routes::admin::check_admin_access))
-        // Future authenticated endpoints will go here
-        // Example: .route("/api/account/profile", get(routes::account::get_profile))
-        .layer(axum_middleware::from_fn_with_state(
-            app_state.clone(),
-            middleware::cpr::require_cpr,
-        ))
-        .layer(axum_middleware::from_fn({
-            let csrf = csrf_protection.clone();
-            move |req, next| {
-                let csrf = csrf.clone();
-                async move { csrf.middleware(req, next).await }
-            }
-        }));
-
-    // Admin routes (protected by CSRF + Auth + Admin verification)
-    let admin_routes = Router::new()
-        .route("/api/admin/users", get(routes::admin::list_users))
-        .route(
-            "/api/admin/users/{account_id}",
-            axum::routing::delete(routes::admin::delete_user),
-        )
-        .layer(axum_middleware::from_fn_with_state(
-            app_state.clone(),
-            middleware::auth::require_admin,
-        ))
-        .layer(axum_middleware::from_fn({
-            let csrf = csrf_protection.clone();
-            move |req, next| {
-                let csrf = csrf.clone();
-                async move { csrf.middleware(req, next).await }
-            }
-        }));
-
-    // CPR submission route (requires CSRF + Auth, but NOT CPR check since this is how you submit CPR)
-    let cpr_submission_route = Router::new()
-        .route("/api/account/cpr", post(routes::account::submit_cpr))
-        .route(
-            "/api/account/cpr/verify",
-            post(routes::account::verify_cpr_for_login),
-        )
-        .layer(axum_middleware::from_fn({
-            let csrf = csrf_protection.clone();
-            move |req, next| {
-                let csrf = csrf.clone();
-                async move { csrf.middleware(req, next).await }
-            }
-        }));
-
-    // CSRF-protected routes (all POST routes that don't require auth)
-    let csrf_protected_routes = Router::new()
-        .route("/api/signup", post(routes::auth::signup))
-        .route("/api/login/totp/setup", post(routes::auth::totp_setup))
-        .route(
-            "/api/account/{account_id}/status",
-            get(routes::account::get_account_status),
-        )
-        .layer(axum_middleware::from_fn(move |req, next| {
-            let csrf = csrf_protection.clone();
-            async move { csrf.middleware(req, next).await }
-        }));
-
-    // Combine all routes
-    let app = Router::new()
-        .route("/health", get(health_check))
-        .route("/api/csrf-token", get(get_csrf_token))
-        .route("/api/auth/status", get(routes::auth::auth_status))
-        .merge(rate_limited_routes)
-        .merge(csrf_protected_routes)
-        .merge(cpr_submission_route)
-        .merge(cpr_protected_routes)
-        .merge(admin_routes)
-        .fallback_service(ServeDir::new("static"))
-        .with_state(app_state);
+    // Create application with all routes and middleware
+    let app = routes::create_app(app_state, csrf_protection, rate_limiter);
 
     // Load TLS configuration from environment
     let bind_addr = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1".to_string());
@@ -167,13 +73,15 @@ async fn main() {
         std::env::var("TLS_CERT_PATH").expect("TLS_CERT_PATH environment variable required");
     let key_path =
         std::env::var("TLS_KEY_PATH").expect("TLS_KEY_PATH environment variable required");
-    let key_password = std::env::var("TLS_KEY_PASSWORD")
-        .expect("TLS_KEY_PASSWORD environment variable required");
+    let key_password =
+        std::env::var("TLS_KEY_PASSWORD").expect("TLS_KEY_PASSWORD environment variable required");
 
     // Load and validate TLS configuration
     let tls_config = tls::load_tls_config(&cert_path, &key_path, &key_password)
         .await
-        .expect("Failed to load TLS configuration - server will not start with invalid certificates");
+        .expect(
+            "Failed to load TLS configuration - server will not start with invalid certificates",
+        );
 
     let addr: std::net::SocketAddr = format!("{}:{}", bind_addr, https_port)
         .parse()
@@ -191,13 +99,4 @@ async fn main() {
         .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .expect("Server failed");
-}
-
-async fn health_check() -> &'static str {
-    "OK"
-}
-
-async fn get_csrf_token(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let token = state.csrf.generate_token();
-    Json(serde_json::json!({ "csrf_token": token }))
 }
