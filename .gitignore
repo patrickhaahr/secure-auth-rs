@@ -9,3 +9,5 @@
 certs/
 *.pem
 .key_password
+
+auth.db
