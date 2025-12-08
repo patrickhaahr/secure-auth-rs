@@ -1,0 +1,87 @@
+#set page(paper: "a4")
+#set text(size: 12pt)
+
+#set table(
+  stroke: 1pt + black,
+  fill: white,
+  inset: 0.5em,
+)
+
+#show table.cell: it => {
+  if it.y == 0 {
+    set text(black)
+    strong(it)
+  } else if it.body == [] {
+    // Replace empty cells with 'N/A'
+    [_N/A_]
+  } else {
+    it
+  }
+}
+
+= Hashing methods categories
+
+#table(
+  columns: 3,
+  [Slow], [Fast], [Message Authentication],
+
+  table.cell(fill: green)[Argon2 (i, d, id)], table.cell(fill: green)[SHA-3], table.cell(fill: green)[HMAC-SHA256],
+  table.cell(fill: rgb("#90EE90"))[Bcrypt], table.cell(fill: green)[BLAKE2], table.cell(fill: green)[HMAC-SHA512],
+  table.cell(fill: rgb("#90EE90"))[Scrypt], table.cell(fill: rgb("#90EE90"))[SHA-2], table.cell(fill: rgb("#90EE90"))[CMAC],
+  table.cell(fill: yellow)[PBKDF2], table.cell(fill: red)[MD5], table.cell(fill: rgb("#90EE90"))[GMAC],
+  [], table.cell(fill: red)[SHA-1], table.cell(fill: orange)[HMAC-SHA1],
+  [], table.cell(fill: red)[CRC32], table.cell(fill: orange)[HMAC-MD5],
+
+)
+
+= Hashing methods use cases
+
+#table(
+  columns: 2,
+  [Hashing Method], [Use Case],
+
+  table.cell(fill: green)[Argon2 (i, d, id)], table.cell(fill: green)[Password hashing],
+  table.cell(fill: green)[SHA-3], table.cell(fill: green)[General-purpose hashing, modern alternative to SHA-2],
+  table.cell(fill: green)[BLAKE2], table.cell(fill: green)[High-performance hashing, checksums, message digests],
+  table.cell(fill: green)[HMAC-SHA256], table.cell(fill: green)[Message authentication, API signatures, JWT tokens],
+  table.cell(fill: green)[HMAC-SHA512], table.cell(fill: green)[Message authentication, high-security applications],
+  table.cell(fill: rgb("#90EE90"))[SHA-2], table.cell(fill: rgb("#90EE90"))[General-purpose hashing, digital signatures, certificates, blockchain],
+  table.cell(fill: rgb("#90EE90"))[Bcrypt], table.cell(fill: rgb("#90EE90"))[Password hashing - legacy systems],
+  table.cell(fill: rgb("#90EE90"))[Scrypt], table.cell(fill: rgb("#90EE90"))[Password hashing - memory-hard function],
+  table.cell(fill: rgb("#90EE90"))[CMAC], table.cell(fill: rgb("#90EE90"))[Message authentication with block ciphers (AES-CMAC)],
+  table.cell(fill: rgb("#90EE90"))[GMAC], table.cell(fill: rgb("#90EE90"))[Message authentication in GCM mode (AES-GCM)],
+  table.cell(fill: yellow)[PBKDF2], table.cell(fill: yellow)[Password hashing - legacy compatibility, key derivation],
+  table.cell(fill: orange)[HMAC-SHA1], table.cell(fill: orange)[Message authentication],
+  table.cell(fill: orange)[HMAC-MD5], table.cell(fill: orange)[Message authentication],
+  table.cell(fill: red)[MD5], table.cell(fill: red)[Checksums],
+  table.cell(fill: red)[SHA-1], table.cell(fill: red)[Digital signatures],
+  table.cell(fill: red)[CRC32], table.cell(fill: red)[Error detection],
+
+)
+
+= Security status classification
+
+#table(
+  columns: 2,
+  [Security Status], [Hashing Methods],
+
+  table.cell(fill: green)[Recommended], table.cell(fill: green)[Argon2 (i, d, id), SHA-3, BLAKE2, HMAC-SHA256, HMAC-SHA512],
+  table.cell(fill: rgb("#90EE90"))[Acceptable], table.cell(fill: rgb("#90EE90"))[SHA-2, Bcrypt, Scrypt, CMAC, GMAC],
+  table.cell(fill: yellow)[Legacy compliant], table.cell(fill: yellow)[PBKDF2],
+  table.cell(fill: orange)[Deprecated], table.cell(fill: orange)[HMAC-SHA1, HMAC-MD5],
+  table.cell(fill: red)[Obsolete], table.cell(fill: red)[MD5, SHA-1, CRC32],
+
+)
+
+== Security status rationale
+
+*Recommended:* Current best practices with rigorous peer review and strong protection against known attacks. Argon2 resists GPU/ASIC attacks. SHA-3 is the latest NIST standard. BLAKE2 offers high performance with strong security. HMAC-SHA256/512 provide robust message authentication.
+
+*Acceptable:* Cryptographically sound algorithms widely deployed in production. SHA-2 is secure and ubiquitous in TLS/SSL and blockchain. Bcrypt and Scrypt are proven password hashing functions. CMAC and GMAC serve specific cryptographic purposes with AES.
+
+*Legacy Compatible:* PBKDF2 for backward compatibility with older systems. Requires high iteration counts for security and lacks memory-hardness. Use only when legacy integration is required.
+
+*Deprecated:* Being phased out due to weaknesses in underlying hash functions (MD5, SHA-1). HMAC provides limited protection, but base algorithm vulnerabilities make these unsuitable for new implementations. Many compliance frameworks forbid their use.
+
+*Obsolete:* Cryptographically broken or fundamentally insecure. MD5 and SHA-1 have demonstrated collision vulnerabilities. CRC32 is a non-cryptographic checksum for error detection only. Violates compliance standards and must be replaced immediately.
+
