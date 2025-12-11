@@ -105,3 +105,7 @@ sqlite3 auth.db "SELECT account_id, is_admin, assigned_at FROM account_roles WHE
 
 sqlite3 auth.db "INSERT INTO account_roles (account_id, is_admin) VALUES ('HLISi0UKcrd0sfbN', 1) ON CONFLICT(account_id) DO UPDATE SET is_admin = 1;"
 ```
+
+sqlx migrate run --source migrations/auth --database-url sqlite:auth.db
+   sqlx migrate run --source migrations/files --database-url sqlite:files.db
+sqlx prepare --database-url sqlite:auth.db
