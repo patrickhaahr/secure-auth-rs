@@ -23,7 +23,7 @@ pub async fn require_cpr(
     }
 
     // Check if user has submitted CPR
-    let has_cpr = repository::has_cpr(&state.db, &user.account_id)
+    let has_cpr = repository::has_cpr(&state.auth_db, &user.account_id)
         .await
         .map_err(|e| {
             tracing::error!(

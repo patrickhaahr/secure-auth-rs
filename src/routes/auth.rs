@@ -81,7 +81,7 @@ pub async fn signup(
     let account_id = account::generate_account_id();
 
     // Create account in database
-    repository::create_account(&state.db, &account_id)
+    repository::create_account(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to create account");
@@ -126,7 +126,7 @@ pub async fn totp_setup(
     })?;
 
     // Store encrypted secret in database
-    repository::insert_totp_secret(&state.db, &account_id, &encryption_secret)
+    repository::insert_totp_secret(&state.auth_db, &account_id, &encryption_secret)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, account_id = %account_id, "Failed to store TOTP secret");
@@ -191,7 +191,7 @@ pub async fn totp_verify(
             "#,
         account_id
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(&state.auth_db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Database query failed");
@@ -231,7 +231,7 @@ pub async fn totp_verify(
     }
 
     // Mark TOTP as verified
-    repository::verify_totp(&state.db, &account_id)
+    repository::verify_totp(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to mark TOTP as verified");
@@ -274,7 +274,7 @@ pub async fn login(
         "#,
         account_id
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(&state.auth_db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Database query failed");

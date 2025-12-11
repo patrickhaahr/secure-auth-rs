@@ -34,7 +34,7 @@ pub async fn check_admin_access(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<AdminCheckResponse>, (StatusCode, String)> {
-    let is_admin = repository::is_admin(&state.db, &user.account_id)
+    let is_admin = repository::is_admin(&state.auth_db, &user.account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to check admin status");
@@ -59,7 +59,7 @@ pub async fn list_users(
     State(state): State<AppState>,
     _user: AuthenticatedUser,
 ) -> Result<Json<Vec<UserResponse>>, (StatusCode, String)> {
-    let accounts = repository::get_all_accounts(&state.db).await.map_err(|e| {
+    let accounts = repository::get_all_accounts(&state.auth_db).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to retrieve accounts");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -80,7 +80,7 @@ pub async fn delete_user(
     Path(account_id): Path<String>,
     _user: AuthenticatedUser,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let rows_affected = repository::delete_account(&state.db, &account_id)
+    let rows_affected = repository::delete_account(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, account_id = %account_id, "Failed to delete account");

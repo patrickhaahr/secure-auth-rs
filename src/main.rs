@@ -11,7 +11,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db: Pool<Sqlite>,
+    pub auth_db: Pool<Sqlite>,
+    pub files_db: Pool<Sqlite>,
     pub csrf: middleware::csrf::CsrfProtection,
 }
 
@@ -29,18 +30,20 @@ async fn main() {
     // Load environment variables
     dotenvy::dotenv().ok();
 
-    // Initialize database connection pool
-    let pool = db::init_pool()
-        .await
-        .expect("Failed to initialize database pool");
+    tracing::info!("Initializing database connections...");
 
-    tracing::info!("Database connected and migrations completed");
+    // Initialize both database pools concurrently
+    let (auth_pool, files_pool) = tokio::try_join!(db::init_auth_pool(), db::init_files_pool())
+        .expect("Failed to initialize database pools");
+
+    tracing::info!("Auth and Files databases connected and migrated");
 
     // Initialize CSRF protection
     let csrf_protection = middleware::csrf::CsrfProtection::new();
 
     let app_state = AppState {
-        db: pool,
+        auth_db: auth_pool,
+        files_db: files_pool,
         csrf: csrf_protection.clone(),
     };
 

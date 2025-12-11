@@ -53,7 +53,7 @@ pub async fn submit_cpr(
 
     // Authorization check: user must own the account or be admin
     if user.account_id != account_id {
-        let is_admin = repository::is_admin(&state.db, &user.account_id)
+        let is_admin = repository::is_admin(&state.auth_db, &user.account_id)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to check admin status");
@@ -74,7 +74,7 @@ pub async fn submit_cpr(
     }
 
     // Verify account exists
-    let account_exists = repository::account_exists(&state.db, &account_id)
+    let account_exists = repository::account_exists(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to verify account");
@@ -95,7 +95,7 @@ pub async fn submit_cpr(
     })?;
 
     // Insert CPR data - database UNIQUE constraint on cpr_hash will prevent duplicates
-    match repository::insert_cpr_data(&state.db, &account_id, &cpr_hash).await {
+    match repository::insert_cpr_data(&state.auth_db, &account_id, &cpr_hash).await {
         Ok(_) => {
             tracing::info!("CPR stored successfully");
 
@@ -106,7 +106,7 @@ pub async fn submit_cpr(
                     "#,
                 account_id
             )
-            .fetch_one(&state.db)
+            .fetch_one(&state.auth_db)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to check TOTP verification status");
@@ -117,7 +117,7 @@ pub async fn submit_cpr(
             })?;
 
             if totp_verified {
-                repository::set_account_verified(&state.db, &account_id)
+                repository::set_account_verified(&state.auth_db, &account_id)
                     .await
                     .map_err(|e| {
                         tracing::error!(error = %e, "Failed to mark account as verified");
@@ -163,7 +163,7 @@ pub async fn get_account_status(
     Path(account_id): Path<String>,
 ) -> Result<Json<AccountStatusResponse>, (StatusCode, String)> {
     // Verify account exists
-    let account_exists = repository::account_exists(&state.db, &account_id)
+    let account_exists = repository::account_exists(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to verify account");
@@ -178,7 +178,7 @@ pub async fn get_account_status(
     }
 
     // Check verification status
-    let is_verified = repository::is_account_verified(&state.db, &account_id)
+    let is_verified = repository::is_account_verified(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to check account verification");
@@ -197,7 +197,7 @@ pub async fn get_account_status(
             "#,
         account_id
     )
-    .fetch_one(&state.db)
+    .fetch_one(&state.auth_db)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "Failed to check TOTP status");
@@ -210,7 +210,7 @@ pub async fn get_account_status(
     let has_totp = has_totp_count > 0;
 
     // Check if CPR is submitted
-    let has_cpr = repository::has_cpr(&state.db, &account_id)
+    let has_cpr = repository::has_cpr(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to check CPR status");
@@ -247,7 +247,7 @@ pub async fn verify_cpr_for_login(
 
     // Authorization check: user must own the account or be admin
     if user.account_id != account_id {
-        let is_admin = repository::is_admin(&state.db, &user.account_id)
+        let is_admin = repository::is_admin(&state.auth_db, &user.account_id)
             .await
             .map_err(|e| {
                 tracing::error!(error = %e, "Failed to check admin status");
@@ -268,7 +268,7 @@ pub async fn verify_cpr_for_login(
     }
 
     // Verify account exists
-    let account_exists = repository::account_exists(&state.db, &account_id)
+    let account_exists = repository::account_exists(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to verify account");
@@ -283,7 +283,7 @@ pub async fn verify_cpr_for_login(
     }
 
     // Get stored CPR hash for this account
-    let stored_cpr_hash = repository::get_cpr_hash_by_account(&state.db, &account_id)
+    let stored_cpr_hash = repository::get_cpr_hash_by_account(&state.auth_db, &account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to retrieve stored CPR hash");

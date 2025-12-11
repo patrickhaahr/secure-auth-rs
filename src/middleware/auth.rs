@@ -148,7 +148,7 @@ pub async fn require_admin(
     request: axum::extract::Request,
     next: Next,
 ) -> Result<Response, (StatusCode, String)> {
-    let is_admin = crate::db::repository::is_admin(&state.db, &user.account_id)
+    let is_admin = crate::db::repository::is_admin(&state.auth_db, &user.account_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to check admin status");
