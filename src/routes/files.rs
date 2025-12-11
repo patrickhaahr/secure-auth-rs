@@ -413,13 +413,14 @@ pub async fn list_admin_files(
 
 /// GET /api/admin/files/{file_id}/permissions
 /// Get permissions for a specific file
+/// Note: Any admin can view permissions (route is already admin-protected)
 pub async fn get_file_permissions(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
-    user: AuthenticatedUser,
+    _user: AuthenticatedUser,
 ) -> Result<Json<Vec<String>>, (StatusCode, String)> {
-    // Verify ownership
-    if !files_repository::is_file_uploader(&state.files_db, &file_id, &user.account_id)
+    // Verify file exists
+    if files_repository::get_file_by_id(&state.files_db, &file_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Database error");
@@ -428,8 +429,9 @@ pub async fn get_file_permissions(
                 "Database error".to_string(),
             )
         })?
+        .is_none()
     {
-        return Err((StatusCode::FORBIDDEN, "Not file owner".to_string()));
+        return Err((StatusCode::NOT_FOUND, "File not found".to_string()));
     }
 
     let permissions = files_repository::get_file_permissions(&state.files_db, &file_id)
@@ -447,13 +449,14 @@ pub async fn get_file_permissions(
 
 /// POST /api/admin/files/{file_id}/permissions/grant
 /// Grant access to accounts
+/// Note: Any admin can grant permissions (route is already admin-protected)
 pub async fn grant_permissions(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
     user: AuthenticatedUser,
     Json(request): Json<PermissionRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    // Verify ownership
+    // Verify file exists
     let file = files_repository::get_file_by_id(&state.files_db, &file_id)
         .await
         .map_err(|e| {
@@ -464,10 +467,6 @@ pub async fn grant_permissions(
             )
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found".to_string()))?;
-
-    if file.uploaded_by != user.account_id {
-        return Err((StatusCode::FORBIDDEN, "Not file owner".to_string()));
-    }
 
     for account_id in &request.account_ids {
         if files_repository::grant_permission(
@@ -498,13 +497,14 @@ pub async fn grant_permissions(
 
 /// POST /api/admin/files/{file_id}/permissions/revoke
 /// Revoke access from accounts
+/// Note: Any admin can revoke permissions (route is already admin-protected)
 pub async fn revoke_permissions(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
     user: AuthenticatedUser,
     Json(request): Json<PermissionRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    // Verify ownership
+    // Verify file exists
     let file = files_repository::get_file_by_id(&state.files_db, &file_id)
         .await
         .map_err(|e| {
@@ -515,10 +515,6 @@ pub async fn revoke_permissions(
             )
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found".to_string()))?;
-
-    if file.uploaded_by != user.account_id {
-        return Err((StatusCode::FORBIDDEN, "Not file owner".to_string()));
-    }
 
     for account_id in &request.account_ids {
         let _ = files_repository::revoke_permission(&state.files_db, &file_id, account_id).await;
