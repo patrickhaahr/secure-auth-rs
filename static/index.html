@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SecureAuth</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
     <div class="container">
@@ -19,8 +19,13 @@
         <div id="auth-view" style="display: none;">
             <h1>You Are Authenticated!</h1>
             <p>Welcome to the secure area.</p>
-            <button id="adminBtn">Admin Panel</button>
-            <button id="logoutBtn">Logout</button>
+            <div class="dashboard-buttons">
+                <!-- My Files button - shown for all users (including admin) -->
+                <button id="filesBtn" style="display: none;">My Files</button>
+                <!-- Admin Panel button - only shown for admin users -->
+                <button id="adminBtn" style="display: none;">Admin Panel</button>
+                <button id="logoutBtn" class="btn-red">Logout</button>
+            </div>
         </div>
     </div>
     
@@ -34,6 +39,16 @@
             window.location.href = "/login.html";
         }
 
+        async function checkAdminStatus() {
+            try {
+                const response = await fetch("/api/admin/check");
+                return response.ok;
+            } catch (error) {
+                console.error("Admin check error:", error);
+                return false;
+            }
+        }
+
         async function checkAuthStatus() {
             try {
                 const response = await fetch("/api/auth/status");
@@ -44,19 +59,40 @@
                     document.getElementById("unauth-view").style.display = "none";
                     document.getElementById("auth-view").style.display = "block";
                      
-                     // Setup logout button (remove old listener to prevent duplication)
-                     const logoutBtn = document.getElementById("logoutBtn");
-                     const newLogoutBtn = logoutBtn.cloneNode(true);
-                     logoutBtn.parentNode.replaceChild(newLogoutBtn, logoutBtn);
-                     document.getElementById("logoutBtn").addEventListener("click", logout);
-                     
-                     // Setup admin button (remove old listener to prevent duplication)
-                     const adminBtn = document.getElementById("adminBtn");
-                     const newAdminBtn = adminBtn.cloneNode(true);
-                     adminBtn.parentNode.replaceChild(newAdminBtn, adminBtn);
-                     document.getElementById("adminBtn").addEventListener("click", () => {
-                         window.location.href = "/admin.html";
-                     });
+                    // Setup logout button
+                    const logoutBtn = document.getElementById("logoutBtn");
+                    const newLogoutBtn = logoutBtn.cloneNode(true);
+                    logoutBtn.parentNode.replaceChild(newLogoutBtn, logoutBtn);
+                    document.getElementById("logoutBtn").addEventListener("click", logout);
+                    
+                    // Check if user is admin
+                    const isAdmin = await checkAdminStatus();
+                    
+                    const filesBtn = document.getElementById("filesBtn");
+                    const adminBtn = document.getElementById("adminBtn");
+                    
+                    // Setup files button - shown for all users
+                    filesBtn.style.display = "inline-block";
+                    const newFilesBtn = filesBtn.cloneNode(true);
+                    filesBtn.parentNode.replaceChild(newFilesBtn, filesBtn);
+                    document.getElementById("filesBtn").addEventListener("click", () => {
+                        window.location.href = "/files.html";
+                    });
+                    
+                    if (isAdmin) {
+                        // Admin users: also show Admin Panel button
+                        adminBtn.style.display = "inline-block";
+                        
+                        // Setup admin button
+                        const newAdminBtn = adminBtn.cloneNode(true);
+                        adminBtn.parentNode.replaceChild(newAdminBtn, adminBtn);
+                        document.getElementById("adminBtn").addEventListener("click", () => {
+                            window.location.href = "/admin.html";
+                        });
+                    } else {
+                        // Regular users: hide Admin Panel button
+                        adminBtn.style.display = "none";
+                    }
                 } else {
                     // Show unauthenticated view
                     document.getElementById("unauth-view").style.display = "block";
