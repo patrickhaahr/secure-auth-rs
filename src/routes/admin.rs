@@ -9,6 +9,7 @@ use serde::Serialize;
 #[derive(Serialize)]
 pub struct AdminCheckResponse {
     is_admin: bool,
+    account_id: String,
 }
 
 #[derive(Serialize)]
@@ -16,16 +17,7 @@ pub struct UserResponse {
     id: String,
     created_at: String,
     is_verified: bool,
-}
-
-impl From<crate::db::models::Account> for UserResponse {
-    fn from(account: crate::db::models::Account) -> Self {
-        Self {
-            id: account.id,
-            created_at: account.created_at,
-            is_verified: account.is_verified,
-        }
-    }
+    is_admin: bool,
 }
 
 /// GET /api/admin/check
@@ -46,7 +38,10 @@ pub async fn check_admin_access(
 
     if is_admin {
         tracing::info!(account_id = %user.account_id, "Admin access granted");
-        Ok(Json(AdminCheckResponse { is_admin: true }))
+        Ok(Json(AdminCheckResponse {
+            is_admin: true,
+            account_id: user.account_id.clone(),
+        }))
     } else {
         tracing::warn!(account_id = %user.account_id, "Admin access denied");
         Err((StatusCode::FORBIDDEN, "Admin access required".to_string()))
@@ -67,7 +62,19 @@ pub async fn list_users(
         )
     })?;
 
-    let users: Vec<UserResponse> = accounts.into_iter().map(UserResponse::from).collect();
+    // Build user responses with admin status
+    let mut users = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let is_admin = repository::is_admin(&state.auth_db, &account.id)
+            .await
+            .unwrap_or(false);
+        users.push(UserResponse {
+            id: account.id,
+            created_at: account.created_at,
+            is_verified: account.is_verified,
+            is_admin,
+        });
+    }
     tracing::info!(count = %users.len(), "Admin retrieved user list");
 
     Ok(Json(users))
