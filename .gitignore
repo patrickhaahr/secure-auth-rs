@@ -10,4 +10,6 @@ certs/
 *.pem
 .key_password
 
-*.db
+*.db*
+
+files/*
