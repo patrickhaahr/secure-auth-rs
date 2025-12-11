@@ -219,3 +219,103 @@ details summary:hover {
     display: inline-block;
     max-width: 100%;
 }
+
+/* --- File Management Styles --- */
+
+/* Tables */
+.file-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.file-table th, .file-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.file-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #333;
+}
+
+.file-table tr:hover {
+    background-color: #f5f9ff;
+}
+
+/* Hashes (Monospace) */
+.hash-cell {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.85em;
+    color: #666;
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Status Indicators */
+.status-verified {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.status-contaminated {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+/* Modals */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+}
+
+.modal-content {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    width: 90%;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow-y: auto;
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from { transform: translate(-50%, -60%); opacity: 0; }
+    to { transform: translate(-50%, -50%); opacity: 1; }
+}
+
+/* Verification Results */
+.verification-success {
+    border-left: 5px solid #28a745;
+    background-color: #f0fff4;
+    padding: 15px;
+}
+
+.verification-error {
+    border-left: 5px solid #dc3545;
+    background-color: #fff5f5;
+    padding: 15px;
+}
+
+/* Buttons */
+.btn-sm { padding: 5px 10px; font-size: 0.875rem; }
+.btn-green { background-color: #28a745; color: white; border: none; }
+.btn-red { background-color: #dc3545; color: white; border: none; }
+.btn-blue { background-color: #007bff; color: white; border: none; }
+.btn-green:hover { background-color: #218838; }
+.btn-red:hover { background-color: #c82333; }
