@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Secure Files - SecureAuth</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="files-body">
+    <div class="files-container">
+        <header class="files-header">
+            <h1>My Secure Files</h1>
+            <a href="/" class="btn-sm">Back to Dashboard</a>
+        </header>
+        
+        <!-- Loading State -->
+        <div id="loading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Verifying identity and loading files...</p>
+        </div>
+        
+        <!-- No Files State -->
+        <div id="no-files" class="empty-state" style="display: none;">
+            <div class="empty-icon">&#128193;</div>
+            <h3>No Files Available</h3>
+            <p>You haven't been granted access to any secure documents yet.</p>
+            <p class="empty-hint">Contact your administrator to request file access.</p>
+        </div>
+        
+        <!-- Files Table -->
+        <div id="files-container" class="files-table-container" style="display: none;">
+            <table class="file-table">
+                <thead>
+                    <tr>
+                        <th>Document Name</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Uploaded</th>
+                        <th>Secure Action</th>
+                    </tr>
+                </thead>
+                <tbody id="files-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Integrity Verification Modal -->
+    <div id="verificationModal" class="modal-overlay">
+        <div class="modal-content verification-modal">
+            <div id="verifyIcon" class="verify-icon"></div>
+            <h2 id="verifyTitle" class="verify-title"></h2>
+            <p id="verifyMsg" class="verify-message"></p>
+            
+            <div class="hash-display">
+                <div class="hash-label">Cryptographic Proof (BLAKE3)</div>
+                <code id="verifyHash" class="hash-value"></code>
+            </div>
+
+            <button id="closeModalBtn" class="btn-blue btn-close-modal">Close</button>
+        </div>
+    </div>
+
+    <script type="module" src="/js/files.js"></script>
+</body>
+</html>
