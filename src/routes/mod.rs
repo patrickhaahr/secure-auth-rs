@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::State,
     middleware as axum_middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
 use tower_http::services::ServeDir;
@@ -13,6 +13,7 @@ use crate::middleware::{cpr, csrf, rate_limit};
 pub mod account;
 pub mod admin;
 pub mod auth;
+pub mod files;
 
 pub fn create_app(
     app_state: AppState,
@@ -89,9 +90,62 @@ pub fn create_app(
             "/api/account/{account_id}/status",
             get(account::get_account_status),
         )
-        .layer(axum_middleware::from_fn(move |req, next| {
+        .layer(axum_middleware::from_fn({
             let csrf = csrf_protection.clone();
-            async move { csrf.middleware(req, next).await }
+            move |req, next| {
+                let csrf = csrf.clone();
+                async move { csrf.middleware(req, next).await }
+            }
+        }));
+
+    // Admin file management routes (Protected by CSRF + Auth + Admin)
+    let admin_file_routes = Router::new()
+        .route("/api/admin/files/upload", post(files::upload_file))
+        .route("/api/admin/files", get(files::list_admin_files))
+        .route(
+            "/api/admin/files/{file_id}/permissions",
+            get(files::get_file_permissions),
+        )
+        .route(
+            "/api/admin/files/{file_id}/permissions/grant",
+            post(files::grant_permissions),
+        )
+        .route(
+            "/api/admin/files/{file_id}/permissions/revoke",
+            post(files::revoke_permissions),
+        )
+        .route("/api/admin/files/{file_id}", delete(files::delete_file))
+        .route(
+            "/api/admin/files/{file_id}/download",
+            get(files::admin_download_file),
+        )
+        .layer(axum_middleware::from_fn_with_state(
+            app_state.clone(),
+            crate::middleware::auth::require_admin,
+        ))
+        .layer(axum_middleware::from_fn({
+            let csrf = csrf_protection.clone();
+            move |req, next| {
+                let csrf = csrf.clone();
+                async move { csrf.middleware(req, next).await }
+            }
+        }));
+
+    // User file routes (protected by CSRF + Auth + CPR)
+    let user_file_routes = Router::new()
+        .route("/api/files", get(files::list_user_files))
+        .route("/api/files/{file_id}/download", get(files::download_file))
+        .route("/api/files/{file_id}/verify", get(files::verify_file))
+        .layer(axum_middleware::from_fn_with_state(
+            app_state.clone(),
+            cpr::require_cpr,
+        ))
+        .layer(axum_middleware::from_fn({
+            let csrf = csrf_protection.clone();
+            move |req, next| {
+                let csrf = csrf.clone();
+                async move { csrf.middleware(req, next).await }
+            }
         }));
 
     // Combine all routes
@@ -104,6 +158,8 @@ pub fn create_app(
         .merge(cpr_submission_route)
         .merge(cpr_protected_routes)
         .merge(admin_routes)
+        .merge(admin_file_routes)
+        .merge(user_file_routes)
         .fallback_service(ServeDir::new("static"))
         .with_state(app_state)
 }

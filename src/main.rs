@@ -4,6 +4,7 @@ mod middleware;
 mod routes;
 mod tls;
 
+use axum::extract::DefaultBodyLimit;
 use sqlx::Pool;
 use sqlx::Sqlite;
 use std::time::Duration;
@@ -63,7 +64,8 @@ async fn main() {
     let rate_limiter = middleware::rate_limit::RateLimiter::new(5, Duration::from_secs(60));
 
     // Create application with all routes and middleware
-    let app = routes::create_app(app_state, csrf_protection, rate_limiter);
+    let app = routes::create_app(app_state, csrf_protection, rate_limiter)
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024));
 
     // Load TLS configuration from environment
     let bind_addr = std::env::var("BIND_ADDRESS").unwrap_or_else(|_| "127.0.0.1".to_string());
