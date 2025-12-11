@@ -4,246 +4,138 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - SecureAuth</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/css/styles.css">
 </head>
-<body>
-    <div class="container">
+<body class="admin-body">
+    <div class="admin-container">
+        <!-- Admin View (shown when authorized) -->
         <div id="admin-view" style="display: none;">
-            <h1>Admin Panel</h1>
-            <p>Welcome to the admin area.</p>
+            <header class="admin-header">
+                <h1>Admin Panel</h1>
+                <div class="header-actions">
+                    <button id="backBtn" class="btn-sm">Dashboard</button>
+                    <button id="logoutBtn" class="btn-sm btn-red">Logout</button>
+                </div>
+            </header>
             
-            <div id="users-section">
-                <h2>User Management</h2>
-                <button id="refreshUsersBtn">Refresh Users</button>
-                <div id="users-error" class="error" style="display: none;"></div>
-                <table id="users-table" style="display: none; width: 100%; border-collapse: collapse; margin-top: 20px;">
-                    <thead>
-                        <tr style="background-color: #f5f5f5;">
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">ID</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Created At</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Verified Status</th>
-                            <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="users-tbody">
-                    </tbody>
-                </table>
-            </div>
+            <!-- User Management Section -->
+            <section id="users-section" class="admin-section">
+                <div class="section-header">
+                    <h2>User Management</h2>
+                    <button id="refreshUsersBtn" class="btn-sm">Refresh</button>
+                </div>
+                <div id="users-error" class="error-message" style="display: none;"></div>
+                <div class="table-container">
+                    <table id="users-table" class="file-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Account ID</th>
+                                <th>Created At</th>
+                                <th>Status</th>
+                                <th>Role</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-tbody"></tbody>
+                    </table>
+                </div>
+            </section>
             
-            <div style="margin-top: 30px;">
-                <button id="logoutBtn">Logout</button>
-                <button id="backBtn">Back to Dashboard</button>
-            </div>
+            <!-- File Management Section -->
+            <section id="file-management-section" class="admin-section">
+                <h2>File Management</h2>
+                
+                <!-- Upload Panel -->
+                <div class="card upload-card">
+                    <h3>Upload Secure File</h3>
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label class="form-label">1. Select File (Max 50MB)</label>
+                            <input type="file" id="fileInput" required>
+                            <div id="fileInfo" class="file-info"></div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">2. Grant Access To</label>
+                            <div class="button-group">
+                                <button type="button" id="selectAllAccounts" class="btn-sm">Select All</button>
+                                <button type="button" id="deselectAllAccounts" class="btn-sm">Deselect All</button>
+                            </div>
+                            <div id="accountCheckboxes" class="checkbox-container">
+                                Loading accounts...
+                            </div>
+                        </div>
+                        
+                        <button type="submit" id="uploadBtn" class="btn-blue btn-upload">
+                            <span id="uploadBtnText">Upload & Secure</span>
+                        </button>
+                        <div id="uploadProgress" class="upload-progress" style="display: none;">
+                            Uploading and computing integrity hash... Please wait.
+                        </div>
+                    </form>
+                    <div id="upload-feedback"></div>
+                </div>
+                
+                <!-- Files List -->
+                <div class="files-list-section">
+                    <div class="section-header">
+                        <h3>Uploaded Files</h3>
+                        <button id="refreshFilesBtn" class="btn-sm">Refresh</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="files-table" class="file-table" style="display: none;">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Type</th>
+                                    <th>Size</th>
+                                    <th>Integrity Hash (BLAKE3)</th>
+                                    <th>Permissions</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="files-tbody"></tbody>
+                        </table>
+                    </div>
+                    <p id="no-files-message" class="no-files-message" style="display: none;">
+                        No files uploaded yet.
+                    </p>
+                </div>
+            </section>
         </div>
         
-        <div id="access-denied" style="display: none;">
+        <!-- Access Denied View -->
+        <div id="access-denied" class="access-denied" style="display: none;">
+            <div class="denied-icon">&#128683;</div>
             <h1>Access Denied</h1>
-            <p>You don't have admin privileges to access this page.</p>
-            <button id="backBtnDenied">Back to Dashboard</button>
+            <p>You don't have administrator privileges to access this page.</p>
+            <button id="backBtnDenied" class="btn-blue">Back to Dashboard</button>
+        </div>
+    </div>
+
+    <!-- Permission Modal -->
+    <div id="permissionModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Manage Permissions</h3>
+                <button id="closeModalBtn" class="modal-close">&times;</button>
+            </div>
+            <p id="modalFileName" class="modal-filename"></p>
+            
+            <div class="button-group">
+                <button type="button" id="modalSelectAll" class="btn-sm">Select All</button>
+                <button type="button" id="modalDeselectAll" class="btn-sm">Deselect None</button>
+            </div>
+            
+            <div id="modalAccountCheckboxes" class="checkbox-container modal-checkboxes"></div>
+            
+            <div class="modal-footer">
+                <button id="cancelModalBtn" class="btn-sm" onclick="document.getElementById('permissionModal').style.display='none'">Cancel</button>
+                <button id="savePermissionsBtn" class="btn-blue">Save Changes</button>
+            </div>
         </div>
     </div>
     
-    <script>
-        async function logout() {
-            try {
-                await fetch("/api/logout", { method: "POST" });
-            } catch (error) {
-                console.error("Logout error:", error);
-            }
-            window.location.href = "/login.html";
-        }
-
-        async function getCsrfToken() {
-            try {
-                const response = await fetch("/api/csrf-token");
-                const data = await response.json();
-                return data.csrf_token;
-            } catch (error) {
-                console.error("Error fetching CSRF token:", error);
-                return null;
-            }
-        }
-
-        function showError(message) {
-            const errorDiv = document.getElementById("users-error");
-            errorDiv.textContent = message;
-            errorDiv.style.display = "block";
-            setTimeout(() => {
-                errorDiv.style.display = "none";
-            }, 5000);
-        }
-
-        async function fetchUsers() {
-            const csrfToken = await getCsrfToken();
-            
-            if (!csrfToken) {
-                showError("Failed to get CSRF token");
-                return;
-            }
-            
-            try {
-                const response = await fetch("/api/admin/users", {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-Token": csrfToken
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch users: ${response.status}`);
-                }
-
-                const users = await response.json();
-                displayUsers(users);
-            } catch (error) {
-                console.error("Error fetching users:", error);
-                showError(error.message);
-            }
-        }
-
-        function displayUsers(users) {
-            const tbody = document.getElementById("users-tbody");
-            const table = document.getElementById("users-table");
-            
-            // Clear existing content
-            while (tbody.firstChild) {
-                tbody.removeChild(tbody.firstChild);
-            }
-            
-            if (users.length === 0) {
-                const row = document.createElement("tr");
-                const cell = document.createElement("td");
-                cell.colSpan = 4;
-                cell.style.padding = "10px";
-                cell.style.textAlign = "center";
-                cell.textContent = "No users found";
-                row.appendChild(cell);
-                tbody.appendChild(row);
-            } else {
-                users.forEach(user => {
-                    const row = document.createElement("tr");
-                    
-                    // ID cell
-                    const idCell = document.createElement("td");
-                    idCell.style.padding = "10px";
-                    idCell.style.border = "1px solid #ddd";
-                    idCell.style.fontFamily = "monospace";
-                    idCell.textContent = user.id;
-                    row.appendChild(idCell);
-                    
-                    // Created At cell
-                    const createdAtCell = document.createElement("td");
-                    createdAtCell.style.padding = "10px";
-                    createdAtCell.style.border = "1px solid #ddd";
-                    createdAtCell.textContent = new Date(user.created_at).toLocaleString();
-                    row.appendChild(createdAtCell);
-                    
-                    // Verified Status cell
-                    const statusCell = document.createElement("td");
-                    statusCell.style.padding = "10px";
-                    statusCell.style.border = "1px solid #ddd";
-                    statusCell.textContent = user.is_verified ? '✅ Verified' : '❌ Not Verified';
-                    row.appendChild(statusCell);
-                    
-                    // Actions cell
-                    const actionsCell = document.createElement("td");
-                    actionsCell.style.padding = "10px";
-                    actionsCell.style.border = "1px solid #ddd";
-                    
-                    const deleteButton = document.createElement("button");
-                    deleteButton.textContent = "Delete";
-                    deleteButton.style.backgroundColor = "#dc3545";
-                    deleteButton.style.color = "white";
-                    deleteButton.style.border = "none";
-                    deleteButton.style.padding = "5px 10px";
-                    deleteButton.style.cursor = "pointer";
-                    deleteButton.addEventListener("click", () => deleteUser(user.id));
-                    
-                    actionsCell.appendChild(deleteButton);
-                    row.appendChild(actionsCell);
-                    
-                    tbody.appendChild(row);
-                });
-            }
-            
-            table.style.display = "table";
-        }
-
-        async function deleteUser(accountId) {
-            if (!confirm(`Are you sure you want to delete user ${accountId}?`)) {
-                return;
-            }
-
-            const csrfToken = await getCsrfToken();
-            
-            if (!csrfToken) {
-                showError("Failed to get CSRF token");
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/admin/users/${accountId}`, {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-Token": csrfToken
-                    }
-                });
-
-                if (response.ok) {
-                    // Refresh the users list
-                    await fetchUsers();
-                } else {
-                    const errorText = await response.text();
-                    console.error(`Failed to delete user: ${response.status} - ${errorText}`);
-                    throw new Error("Failed to delete user. Please try again.");
-                }
-            } catch (error) {
-                console.error("Error deleting user:", error);
-                showError(error.message);
-            }
-        }
-
-        async function checkAdminAccess() {
-            try {
-                const response = await fetch("/api/admin/check", {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json"
-                    }
-                });
-
-                if (response.ok) {
-                    document.getElementById("admin-view").style.display = "block";
-                    document.getElementById("access-denied").style.display = "none";
-                    
-                    // Set up event listeners
-                    document.getElementById("logoutBtn").addEventListener("click", logout);
-                    document.getElementById("backBtn").addEventListener("click", () => {
-                        window.location.href = "/";
-                    });
-                    document.getElementById("refreshUsersBtn").addEventListener("click", fetchUsers);
-                    
-                    // Load users when admin access is granted
-                    await fetchUsers();
-                } else if (response.status === 403) {
-                    document.getElementById("admin-view").style.display = "none";
-                    document.getElementById("access-denied").style.display = "block";
-                    
-                    document.getElementById("backBtnDenied").addEventListener("click", () => {
-                        window.location.href = "/";
-                    });
-                } else {
-                    window.location.href = "/login.html";
-                }
-            } catch (error) {
-                console.error("Error checking admin access:", error);
-                window.location.href = "/login.html";
-            }
-        }
-
-        checkAdminAccess();
-    </script>
+    <script type="module" src="/js/admin.js"></script>
 </body>
 </html>
