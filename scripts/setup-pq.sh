@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 # Configuration
 SENDER_ID="server2"
 SENDER_NAME="External Server 2"
-KEYS_DIR="keys"
+KEYS_DIR="../keys"
 SENDERS_DIR="$KEYS_DIR/senders"
 TEST_FILE="test-file.txt"
 
@@ -49,44 +49,44 @@ echo -e "${BLUE}Step 3: Register Sender in Database${NC}"
 echo "-------------------------------------"
 
 # Check if files.db exists
-if [ ! -f "files.db" ]; then
+if [ ! -f "../files.db" ]; then
     echo -e "${RED}✗ files.db not found. Please run migrations first.${NC}"
     exit 1
 fi
 
-# Extract the public key
-PUBLIC_KEY=$(cat "$SENDERS_DIR/$SENDER_ID.pk")
+# Extract the public key and convert to hex format
+PUBLIC_KEY=$(od -t x1 -An "$SENDERS_DIR/$SENDER_ID.pk" | tr -d ' \n')
 
 # Insert into database (SQLite)
-sqlite3 files.db <<EOF
+sqlite3 ../files.db <<END_SQL
 INSERT OR REPLACE INTO third_party_senders (id, name, ed25519_public_key, is_active, created_at)
 VALUES ('$SENDER_ID', '$SENDER_NAME', '$PUBLIC_KEY', 1, datetime('now'));
-EOF
+END_SQL
 
 echo -e "${GREEN}✓ Sender $SENDER_ID registered in database${NC}"
 
 # Verify insertion
 echo "Sender details:"
-sqlite3 files.db "SELECT id, name, is_active, created_at FROM third_party_senders WHERE id = '$SENDER_ID';"
+sqlite3 ../files.db "SELECT id, name, is_active, created_at FROM third_party_senders WHERE id = '$SENDER_ID';"
 
 echo
 echo -e "${BLUE}Step 4: Create Test File${NC}"
 echo "--------------------"
 
 # Create test file
-cat > "$TEST_FILE" <<EOF
+cat > "$TEST_FILE" <<END_FILE
 This is a top secret document from $SENDER_ID.
 
 Content for testing:
 - Timestamp: $(date)
-- Server fingerprint: $(cargo run --bin keygen -- server --output-dir "$KEYS_DIR" 2>&1 | grep fingerprint | cut -d' ' -f3)
+- Server fingerprint: $(cargo run --bin keygen -- inspect --key-path "$KEYS_DIR/server_hybrid.pk" 2>&1 | grep "Fingerprint:" | cut -d' ' -f2)
 - Security level: Maximum (Post-Quantum)
 - Encryption: Hybrid X25519 + Kyber-768
 - Auth: Ed25519 signatures
 - Storage: XChaCha20-Poly1305
 
 This file should be encrypted, quarantined, and approved before access.
-EOF
+END_FILE
 
 echo -e "${GREEN}✓ Test file created: $TEST_FILE${NC}"
 
@@ -95,20 +95,20 @@ echo -e "${BLUE}Step 5: Update .env Configuration${NC}"
 echo "-----------------------------------"
 
 # Check if .env exists and add PQ key paths if not present
-if [ -f ".env" ]; then
-    if ! grep -q "PQ_SECRET_KEY_PATH" .env; then
-        echo "" >> .env
-        echo "# Post-Quantum Cryptography Keys" >> .env
-        echo "PQ_SECRET_KEY_PATH=$KEYS_DIR/server_hybrid.sk" >> .env
-        echo "PQ_PUBLIC_KEY_PATH=$KEYS_DIR/server_hybrid.pk" >> .env
+if [ -f "../.env" ]; then
+    if ! grep -q "PQ_SECRET_KEY_PATH" ../.env; then
+        echo "" >> ../.env
+        echo "# Post-Quantum Cryptography Keys" >> ../.env
+        echo "PQ_SECRET_KEY_PATH=keys/server_hybrid.sk" >> ../.env
+        echo "PQ_PUBLIC_KEY_PATH=keys/server_hybrid.pk" >> ../.env
         echo -e "${GREEN}✓ Added PQ key paths to .env${NC}"
     else
         echo -e "${YELLOW}⚠ PQ key paths already exist in .env${NC}"
     fi
 else
-    echo "# Post-Quantum Cryptography Keys" > .env
-    echo "PQ_SECRET_KEY_PATH=$KEYS_DIR/server_hybrid.sk" >> .env
-    echo "PQ_PUBLIC_KEY_PATH=$KEYS_DIR/server_hybrid.pk" >> .env
+    echo "# Post-Quantum Cryptography Keys" > ../.env
+    echo "PQ_SECRET_KEY_PATH=keys/server_hybrid.sk" >> ../.env
+    echo "PQ_PUBLIC_KEY_PATH=keys/server_hybrid.pk" >> ../.env
     echo -e "${GREEN}✓ Created .env with PQ key paths${NC}"
 fi
 
@@ -127,7 +127,7 @@ echo -e "  ${GREEN}✓${NC} Test file: $TEST_FILE"
 # Show server fingerprint
 echo
 echo "Server Public Key Fingerprint:"
-cargo run --bin keygen -- server --output-dir "$KEYS_DIR" 2>&1 | grep fingerprint | cut -d' ' -f3
+cargo run --bin keygen -- inspect --key-path "$KEYS_DIR/server_hybrid.pk" 2>&1 | grep "Fingerprint:" | cut -d' ' -f2
 
 echo
 echo -e "${GREEN}🎉 Setup Complete!${NC}"

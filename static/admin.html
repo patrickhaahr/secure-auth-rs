@@ -45,6 +45,32 @@
             <section id="file-management-section" class="admin-section">
                 <h2>File Management</h2>
                 
+                <!-- Quarantined Files Section -->
+                <div class="quarantine-section">
+                    <div class="section-header">
+                        <h3>Quarantined Third-Party Files</h3>
+                        <button id="refreshQuarantineBtn" class="btn-sm">Refresh</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="quarantine-table" class="file-table" style="display: none;">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Sender ID</th>
+                                    <th>Size</th>
+                                    <th>Integrity Hash (BLAKE3)</th>
+                                    <th>Uploaded</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="quarantine-tbody"></tbody>
+                        </table>
+                    </div>
+                    <p id="no-quarantine-message" class="no-files-message" style="display: none;">
+                        No quarantined files.
+                    </p>
+                </div>
+                
                 <!-- Upload Panel -->
                 <div class="card upload-card">
                     <h3>Upload Secure File</h3>

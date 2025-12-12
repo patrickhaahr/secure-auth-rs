@@ -25,8 +25,8 @@ use serde::Serialize;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
-/// Storage directory for third-party uploads
-const UPLOAD_DIR: &str = "files/uploads";
+/// Storage directory for third-party uploads (aligned with main content storage)
+const UPLOAD_DIR: &str = "files/content";
 
 // ============================================================================
 // Request/Response Types

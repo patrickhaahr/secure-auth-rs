@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                    SELECT is_verified FROM totp_secrets WHERE account_id = ?\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "name": "is_verified",
+        "ordinal": 0,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0cb8eb96050361d38a595f87810e9305339f727063fdc710f7617cae84911414"
+}

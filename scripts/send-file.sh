@@ -5,8 +5,8 @@ set -e  # Exit on any error
 
 # Configuration
 SENDER_ID="server2"
-SENDERS_DIR="keys/senders"
-SERVER_URL="https://localhost:3443"
+SENDERS_DIR="../keys/senders"
+SERVER_URL="https://127.0.0.1:3443"
 TEST_FILE="test-file.txt"
 
 # Colors for output
@@ -22,13 +22,24 @@ echo "========================="
 # Check prerequisites
 echo -e "${BLUE}Checking prerequisites...${NC}"
 
-# Check if test file exists
+# Check if test file exists, create if not
 if [ ! -f "$TEST_FILE" ]; then
-    echo -e "${RED}✗ Test file '$TEST_FILE' not found${NC}"
-    echo "Run './setup-pq.sh' first to create test file"
-    exit 1
+    echo -e "${YELLOW}⚠️  Test file '$TEST_FILE' not found, creating...${NC}"
+    cat > "$TEST_FILE" << 'EOF'
+This is a test file for the PQ Secure File Transfer System.
+
+Created: $(date)
+Purpose: Testing secure file upload and download functionality
+Content: Sample text for verification
+
+This file contains no sensitive information and is intended for testing
+the post-quantum cryptographic file transfer system.
+
+EOF
+    echo -e "${GREEN}✓ Test file created: $TEST_FILE${NC}"
+else
+    echo -e "${GREEN}✓ Test file found: $TEST_FILE${NC}"
 fi
-echo -e "${GREEN}✓ Test file found: $TEST_FILE${NC}"
 
 # Check if sender keys exist
 if [ ! -f "$SENDERS_DIR/$SENDER_ID.sk" ]; then
@@ -60,8 +71,8 @@ echo "Server Public Key Fingerprint: $FINGERPRINT"
 echo -e "${YELLOW}⚠️  Verify this fingerprint on first use (Trust On First Use)${NC}"
 
 # Get local server fingerprint for comparison
-if [ -f "keys/server_hybrid.pk" ]; then
-    LOCAL_FINGERPRINT=$(cargo run --bin keygen -- server --output-dir keys 2>&1 | grep fingerprint | cut -d' ' -f3)
+if [ -f "../keys/server_hybrid.pk" ]; then
+    LOCAL_FINGERPRINT=$(cargo run --bin keygen -- inspect --key-path ../keys/server_hybrid.pk 2>&1 | grep "Fingerprint:" | cut -d' ' -f2)
     if [ "$FINGERPRINT" = "$LOCAL_FINGERPRINT" ]; then
         echo -e "${GREEN}✓ Fingerprint matches local key${NC}"
     else
@@ -85,7 +96,7 @@ echo "--------------------"
 
 # Get file info
 FILE_SIZE=$(stat -f%z "$TEST_FILE" 2>/dev/null || stat -c%s "$TEST_FILE" 2>/dev/null)
-FILE_HASH=$(cargo run --bin keygen -- server --output-dir keys 2>&1 | grep fingerprint | cut -d' ' -f3)
+# FILE_HASH variable removed as it was unused and caused confusion/side-effects
 
 echo "File: $TEST_FILE"
 echo "Size: $FILE_SIZE bytes"

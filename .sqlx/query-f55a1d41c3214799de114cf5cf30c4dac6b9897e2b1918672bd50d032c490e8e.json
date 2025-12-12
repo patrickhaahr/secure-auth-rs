@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT secret_encrypted\n                FROM totp_secrets\n                WHERE account_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "secret_encrypted",
+        "ordinal": 0,
+        "type_info": "Blob"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f55a1d41c3214799de114cf5cf30c4dac6b9897e2b1918672bd50d032c490e8e"
+}

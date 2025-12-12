@@ -35,6 +35,20 @@ pub struct FileWithSize {
     pub file_size: i64,
 }
 
+/// File with origin information (for admin management)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWithOrigin {
+    pub id: String,
+    pub filename: String,
+    pub file_type: String,
+    pub blake3_hash: String,
+    pub uploaded_by: String,
+    pub uploaded_at: String,
+    pub file_size: i64,
+    pub origin_type: String,
+    pub sender_id: Option<String>,
+}
+
 // ============================================================================
 // Third-Party Upload Support
 // ============================================================================

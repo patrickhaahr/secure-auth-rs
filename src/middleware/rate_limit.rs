@@ -67,7 +67,7 @@ impl RateLimiter {
     }
 
     /// Check rate limit and return appropriate action
-    pub fn check_rate_limit(&self, identifier: ClientIdentifier) -> RateLimitAction {
+    pub(crate) fn check_rate_limit(&self, identifier: ClientIdentifier) -> RateLimitAction {
         let mut requests = self.requests.lock().unwrap();
         let now = Instant::now();
 

@@ -34,12 +34,6 @@ enum Commands {
         #[arg(short, long, default_value = "keys/senders")]
         output_dir: PathBuf,
     },
-    /// Inspect existing keys (print fingerprint)
-    Inspect {
-        /// Path to public key file
-        #[arg(short, long, default_value = "keys/server_hybrid.pk")]
-        key_path: PathBuf,
-    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,24 +72,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Public Key: {}", pk_path.display());
             println!("  Public Key (Hex): {}", hex::encode(verifying_key.as_bytes()));
             println!("\nTo register this sender, add the hex public key to the 'third_party_senders' table.");
-        }
-        Commands::Inspect { key_path } => {
-            if !key_path.exists() {
-                eprintln!("Error: Key file not found at {}", key_path.display());
-                std::process::exit(1);
-            }
-
-            match pq_hybrid::load_public_key(&key_path) {
-                Ok(pk) => {
-                    let fingerprint = pq_hybrid::fingerprint(&pk);
-                    println!("Key: {}", key_path.display());
-                    println!("Fingerprint: {}", fingerprint);
-                }
-                Err(e) => {
-                    eprintln!("Error loading key: {}", e);
-                    std::process::exit(1);
-                }
-            }
         }
     }
 

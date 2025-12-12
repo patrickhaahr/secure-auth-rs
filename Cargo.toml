@@ -29,7 +29,7 @@ time = "0.3.36"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 zeroize = { version = "1.8.2", features = ["derive"] }
-rustls = "0.23"
+rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2.1"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 blake3 = "1.8.2"
@@ -56,7 +56,7 @@ chacha20poly1305 = "0.10"
 hkdf = "0.12"
 
 # HTTP Client (for sender binary)
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json", "__rustls-ring"] }
 
 # CLI argument parsing (for binaries)
 clap = { version = "4.5", features = ["derive"] }

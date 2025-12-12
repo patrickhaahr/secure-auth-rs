@@ -42,6 +42,8 @@ pub struct FileResponse {
     pub blake3_hash: String,
     pub uploaded_by: String,
     pub uploaded_at: String,
+    pub origin_type: String,
+    pub sender_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -373,12 +375,12 @@ pub async fn upload_file(
 }
 
 /// GET /api/admin/files
-/// List all files uploaded by the current admin
+/// List all approved files (both internal and third-party) for admin management
 pub async fn list_admin_files(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _user: AuthenticatedUser,
 ) -> Result<Json<Vec<FileWithPermissionsResponse>>, (StatusCode, String)> {
-    let files = files_repository::get_files_by_uploader(&state.files_db, &user.account_id)
+    let files = files_repository::get_all_approved_files(&state.files_db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Failed to fetch files");
@@ -403,6 +405,8 @@ pub async fn list_admin_files(
                 blake3_hash: file.blake3_hash,
                 uploaded_by: file.uploaded_by,
                 uploaded_at: file.uploaded_at,
+                origin_type: file.origin_type,
+                sender_id: file.sender_id,
             },
             permissions,
         });
@@ -610,14 +614,14 @@ pub async fn delete_file(
 }
 
 /// GET /api/admin/files/{file_id}/download
-/// Download a file (admin can download their uploaded files)
+/// Download a file (admin can download any approved file)
 pub async fn admin_download_file(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
     user: AuthenticatedUser,
 ) -> Result<Response, (StatusCode, String)> {
-    // Get file info
-    let file = files_repository::get_file_with_size(&state.files_db, &file_id)
+    // Get file info with origin
+    let file = files_repository::get_file_with_origin(&state.files_db, &file_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Database error");
@@ -628,9 +632,9 @@ pub async fn admin_download_file(
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found".to_string()))?;
 
-    // Verify ownership
-    if file.uploaded_by != user.account_id {
-        return Err((StatusCode::FORBIDDEN, "Not file owner".to_string()));
+    // Verify file is approved
+    if file.upload_status != "approved" {
+        return Err((StatusCode::FORBIDDEN, "File is not approved".to_string()));
     }
 
     download_verified_file_stream(
@@ -639,7 +643,7 @@ pub async fn admin_download_file(
         &file.filename,
         &file.blake3_hash,
         &file.file_type,
-        file.file_size, // Now passing size!
+        file.file_size,
         &user.account_id,
     )
     .await
@@ -675,6 +679,8 @@ pub async fn list_user_files(
             blake3_hash: f.blake3_hash,
             uploaded_by: f.uploaded_by,
             uploaded_at: f.uploaded_at,
+            origin_type: f.origin_type,
+            sender_id: f.sender_id,
         })
         .collect();
 

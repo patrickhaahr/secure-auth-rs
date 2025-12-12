@@ -306,6 +306,27 @@ async function fetchFiles() {
 }
 
 /**
+ * Fetches and displays quarantined third-party files
+ */
+async function fetchQuarantinedFiles() {
+    console.log("Fetching quarantined files...");
+    try {
+        const response = await secureFetch("/api/admin/quarantine");
+        console.log("Quarantine response status:", response.status);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log("Quarantine data received:", data);
+            renderQuarantineTable(data);
+        } else {
+            console.error("Failed to fetch quarantined files:", response.status);
+        }
+    } catch (e) {
+        console.error("Error fetching quarantined files:", e);
+    }
+}
+
+/**
  * Renders the files table
  * Handles multiple response formats:
  * - Array of file objects
@@ -349,9 +370,20 @@ function renderFilesTable(data) {
             return;
         }
 
+        // Determine badge type
+        let badgeHtml = '';
+        if (f.origin_type === 'third_party') {
+            badgeHtml = `<span class="badge badge-purple" title="Sender: ${escapeHtml(f.sender_id || 'Unknown')}">Third-Party</span>`;
+        } else {
+            badgeHtml = `<span class="badge badge-gray">Internal</span>`;
+        }
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td><strong>${escapeHtml(f.filename || 'Unknown')}</strong></td>
+            <td>
+                <strong>${escapeHtml(f.filename || 'Unknown')}</strong>
+                <div style="font-size: 0.8em; margin-top: 4px;">${badgeHtml}</div>
+            </td>
             <td>${escapeHtml(f.file_type || f.mime_type || 'Unknown')}</td>
             <td>${formatBytes(f.file_size || f.size || 0)}</td>
             <td>
@@ -392,6 +424,86 @@ function renderFilesTable(data) {
     
     console.log("Files table rendered with", data.length, "rows");
 }
+
+/**
+ * Renders the quarantined files table
+ * @param {Array} data - Array of quarantined file data
+ */
+function renderQuarantineTable(data) {
+    const tbody = elements.quarantineTbody;
+    const table = elements.quarantineTable;
+    const noFiles = elements.noQuarantineMessage;
+
+    console.log("Rendering quarantine table with data:", data);
+
+    if (!tbody || !table) {
+        console.error("Quarantine table elements not found");
+        return;
+    }
+
+    tbody.innerHTML = '';
+    
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        table.style.display = 'none';
+        if (noFiles) noFiles.style.display = 'block';
+        return;
+    }
+
+    table.style.display = 'table';
+    if (noFiles) noFiles.style.display = 'none';
+
+    data.forEach((f, index) => {
+        console.log(`Processing quarantined file ${index}:`, f);
+        
+        if (!f || !f.id) {
+            console.warn("Invalid quarantined file object at index", index, f);
+            return;
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${escapeHtml(f.filename || 'Unknown')}</strong></td>
+            <td class="monospace">${escapeHtml(f.sender_id || 'Unknown')}</td>
+            <td>${formatBytes(f.file_size || f.size || 0)}</td>
+            <td>
+                <span class="hash-cell" title="${escapeHtml(f.blake3_hash || '')}">
+                    ${truncateHash(f.blake3_hash || '')}
+                </span>
+            </td>
+            <td>${f.created_at ? new Date(f.created_at).toLocaleString() : 'Unknown'}</td>
+            <td class="actions-cell">
+                <button class="btn-sm btn-green btn-approve">
+                    Approve
+                </button>
+                <button class="btn-sm btn-blue btn-download">
+                    Download
+                </button>
+                <button class="btn-sm btn-red btn-delete">
+                    Delete
+                </button>
+            </td>
+        `;
+        
+        const fileId = f.id;
+        const filename = f.filename || 'download';
+        
+        tr.querySelector('.btn-approve').addEventListener('click', () => {
+            approveQuarantinedFile(fileId);
+        });
+        tr.querySelector('.btn-download').addEventListener('click', () => {
+            downloadQuarantinedFile(fileId, filename);
+        });
+        tr.querySelector('.btn-delete').addEventListener('click', () => {
+            deleteQuarantinedFile(fileId);
+        });
+        
+        tbody.appendChild(tr);
+    });
+    
+    console.log("Quarantine table rendered with", data.length, "rows");
+}
+
+
 
 /**
  * Downloads a file (admin)
@@ -441,6 +553,83 @@ async function deleteFile(fileId) {
     } catch (err) {
         console.error("Delete error:", err);
         showError("Failed to delete file");
+    }
+}
+
+/**
+ * Approves a quarantined file
+ * @param {string} fileId - File ID
+ */
+async function approveQuarantinedFile(fileId) {
+    if (!confirm("Approve this quarantined file? It will be moved to the main file system.")) return;
+    
+    try {
+        const response = await secureFetch(`/api/admin/quarantine/${fileId}/approve`, {
+            method: "POST"
+        });
+        
+        if (response.ok) {
+            await fetchQuarantinedFiles();
+            await fetchFiles(); // Refresh main files list too
+        } else {
+            const errorText = await response.text();
+            throw new Error(`Approval failed: ${errorText}`);
+        }
+    } catch (err) {
+        console.error("Approval error:", err);
+        showError("Failed to approve file");
+    }
+}
+
+/**
+ * Downloads a quarantined file
+ * @param {string} fileId - File ID
+ * @param {string} filename - Original filename
+ */
+async function downloadQuarantinedFile(fileId, filename) {
+    try {
+        const response = await secureFetch(`/api/admin/quarantine/${fileId}/download`);
+        
+        if (!response.ok) {
+            throw new Error("Download failed");
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+    } catch (err) {
+        console.error("Download error:", err);
+        showError("Failed to download quarantined file");
+    }
+}
+
+/**
+ * Deletes a quarantined file after confirmation
+ * @param {string} fileId - File ID
+ */
+async function deleteQuarantinedFile(fileId) {
+    if (!confirm("Delete this quarantined file? This action cannot be undone.")) return;
+    
+    try {
+        const response = await secureFetch(`/api/admin/quarantine/${fileId}`, {
+            method: "DELETE"
+        });
+        
+        if (response.ok) {
+            await fetchQuarantinedFiles();
+        } else {
+            const errorText = await response.text();
+            throw new Error(`Delete failed: ${errorText}`);
+        }
+    } catch (err) {
+        console.error("Delete error:", err);
+        showError("Failed to delete quarantined file");
     }
 }
 
@@ -537,8 +726,10 @@ async function savePermissions() {
     console.log("Selected accounts:", selectedAccounts);
     
     try {
+        const baseUrl = `/api/admin/files/${currentFileId}`;
+        
         // First, get current permissions to compare
-        const permResponse = await secureFetch(`/api/admin/files/${currentFileId}/permissions`);
+        const permResponse = await secureFetch(`${baseUrl}/permissions`);
         let currentPermissions = [];
         if (permResponse.ok) {
             currentPermissions = await permResponse.json();
@@ -558,7 +749,7 @@ async function savePermissions() {
         
         // Grant new permissions
         if (toGrant.length > 0) {
-            const grantResponse = await secureFetch(`/api/admin/files/${currentFileId}/permissions/grant`, {
+            const grantResponse = await secureFetch(`${baseUrl}/permissions/grant`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ account_ids: toGrant })
@@ -572,7 +763,7 @@ async function savePermissions() {
         
         // Revoke removed permissions
         if (toRevoke.length > 0) {
-            const revokeResponse = await secureFetch(`/api/admin/files/${currentFileId}/permissions/revoke`, {
+            const revokeResponse = await secureFetch(`${baseUrl}/permissions/revoke`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ account_ids: toRevoke })
@@ -585,6 +776,8 @@ async function savePermissions() {
         }
         
         closeModal();
+        
+        // Refresh the table
         await fetchFiles();
     } catch (err) {
         console.error("Error saving permissions:", err);
@@ -655,6 +848,7 @@ async function checkAdminAccess() {
             // Initialize admin panel
             await fetchUsers();
             await fetchFiles();
+            await fetchQuarantinedFiles();
         } else if (response.status === 403) {
             if (elements.adminView) elements.adminView.style.display = 'none';
             if (elements.accessDenied) elements.accessDenied.style.display = 'block';
@@ -697,6 +891,11 @@ function cacheElements() {
         filesTable: document.getElementById('files-table'),
         filesTbody: document.getElementById('files-tbody'),
         noFilesMessage: document.getElementById('no-files-message'),
+        
+        // Quarantine table
+        quarantineTable: document.getElementById('quarantine-table'),
+        quarantineTbody: document.getElementById('quarantine-tbody'),
+        noQuarantineMessage: document.getElementById('no-quarantine-message'),
         
         // Permission modal
         permissionModal: document.getElementById('permissionModal'),
@@ -741,6 +940,9 @@ function attachEventListeners() {
     
     // Files list
     document.getElementById('refreshFilesBtn')?.addEventListener('click', fetchFiles);
+    
+    // Quarantine list
+    document.getElementById('refreshQuarantineBtn')?.addEventListener('click', fetchQuarantinedFiles);
     
     // Permission modal
     document.getElementById('closeModalBtn')?.addEventListener('click', closeModal);

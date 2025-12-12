@@ -1,5 +1,5 @@
 use super::files_models::{
-    AuditAction, FileMetadata, FilePermission, FileWithSize, FileWithStatus, PhysicalFile,
+    AuditAction, FileMetadata, FilePermission, FileWithSize, FileWithOrigin, FileWithStatus, PhysicalFile,
     ThirdPartySender,
 };
 use sqlx::{Pool, Sqlite};
@@ -151,6 +151,43 @@ pub async fn get_file_by_id(
     .await
 }
 
+/// Get file with origin information
+pub async fn get_file_with_origin(
+    pool: &Pool<Sqlite>,
+    file_id: &str,
+) -> Result<Option<FileWithStatus>, sqlx::Error> {
+    let result: Option<(String, String, String, String, String, String, i64, String, Option<String>, String)> = sqlx::query_as(
+        r#"
+        SELECT 
+            f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, 
+            pf.file_size, f.origin_type, f.sender_id, f.upload_status
+        FROM files f
+        JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
+        WHERE f.id = ?
+        "#,
+    )
+    .bind(file_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(result.map(
+        |(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size, origin_type, sender_id, upload_status)| {
+            FileWithStatus {
+                id,
+                filename,
+                file_type,
+                blake3_hash,
+                uploaded_by,
+                uploaded_at,
+                file_size,
+                origin_type,
+                sender_id,
+                upload_status,
+            }
+        },
+    ))
+}
+
 /// Get file with size by ID (joins with physical_files)
 pub async fn get_file_with_size(
     pool: &Pool<Sqlite>,
@@ -181,6 +218,38 @@ pub async fn get_file_with_size(
             }
         },
     ))
+}
+
+/// Get all approved files (both internal and third-party) for admin management
+pub async fn get_all_approved_files(
+    pool: &Pool<Sqlite>,
+) -> Result<Vec<FileWithOrigin>, sqlx::Error> {
+    let results: Vec<(String, String, String, String, String, String, i64, String, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, pf.file_size, f.origin_type, f.sender_id
+        FROM files f
+        JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
+        WHERE f.upload_status = 'approved'
+        ORDER BY f.uploaded_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(results
+        .into_iter()
+        .map(|(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size, origin_type, sender_id)| FileWithOrigin {
+            id,
+            filename,
+            file_type,
+            blake3_hash,
+            uploaded_by,
+            uploaded_at,
+            file_size,
+            origin_type,
+            sender_id,
+        })
+        .collect())
 }
 
 /// Get all files uploaded by a specific admin
@@ -303,10 +372,11 @@ pub async fn get_file_permissions(
 pub async fn get_files_for_account(
     pool: &Pool<Sqlite>,
     account_id: &str,
-) -> Result<Vec<FileWithSize>, sqlx::Error> {
-    let results: Vec<(String, String, String, String, String, String, i64)> = sqlx::query_as(
+) -> Result<Vec<FileWithOrigin>, sqlx::Error> {
+    let results: Vec<(String, String, String, String, String, String, i64, String, Option<String>)> = sqlx::query_as(
         r#"
-        SELECT f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, pf.file_size
+        SELECT f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, 
+            pf.file_size, f.origin_type, f.sender_id
         FROM files f
         JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
         JOIN file_permissions fp ON f.id = fp.file_id
@@ -321,8 +391,8 @@ pub async fn get_files_for_account(
     Ok(results
         .into_iter()
         .map(
-            |(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size)| {
-                FileWithSize {
+            |(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size, origin_type, sender_id)| {
+                FileWithOrigin {
                     id,
                     filename,
                     file_type,
@@ -330,6 +400,8 @@ pub async fn get_files_for_account(
                     uploaded_by,
                     uploaded_at,
                     file_size,
+                    origin_type,
+                    sender_id,
                 }
             },
         )
@@ -497,6 +569,42 @@ pub async fn get_quarantined_files(pool: &Pool<Sqlite>) -> Result<Vec<FileWithSt
         FROM files f
         JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
         WHERE f.upload_status = 'quarantine'
+        ORDER BY f.uploaded_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(results
+        .into_iter()
+        .map(
+            |(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size, origin_type, upload_status, sender_id)| {
+                FileWithStatus {
+                    id,
+                    filename,
+                    file_type,
+                    blake3_hash,
+                    uploaded_by,
+                    uploaded_at,
+                    file_size,
+                    origin_type,
+                    upload_status,
+                    sender_id,
+                }
+            },
+        )
+        .collect())
+}
+
+/// Get all approved third-party files
+pub async fn get_third_party_files(pool: &Pool<Sqlite>) -> Result<Vec<FileWithStatus>, sqlx::Error> {
+    let results: Vec<(String, String, String, String, String, String, i64, String, String, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, 
+               pf.file_size, f.origin_type, f.upload_status, f.sender_id
+        FROM files f
+        JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
+        WHERE f.origin_type = 'third_party' AND f.upload_status = 'approved'
         ORDER BY f.uploaded_at DESC
         "#,
     )

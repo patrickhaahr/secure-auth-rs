@@ -1,0 +1,11 @@
+This is a top secret document from server2.
+
+Content for testing:
+- Timestamp: Fri Dec 12 12:01:50 PM CET 2025
+- Server fingerprint: f86cc9d1e9f8f3d8ea81876f89d4204519bae2cff92b98c08a2da526b26a6124
+- Security level: Maximum (Post-Quantum)
+- Encryption: Hybrid X25519 + Kyber-768
+- Auth: Ed25519 signatures
+- Storage: XChaCha20-Poly1305
+
+This file should be encrypted, quarantined, and approved before access.
