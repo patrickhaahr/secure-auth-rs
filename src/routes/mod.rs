@@ -12,8 +12,10 @@ use crate::middleware::{cpr, csrf, rate_limit};
 
 pub mod account;
 pub mod admin;
+pub mod admin_quarantine;
 pub mod auth;
 pub mod files;
+pub mod pq_upload;
 
 pub fn create_app(
     app_state: AppState,
@@ -29,6 +31,12 @@ pub fn create_app(
             let limiter = rate_limiter.clone();
             async move { limiter.middleware(jar, req, next).await }
         }));
+
+    // Post-Quantum Cryptography routes (Public Key + Upload)
+    // No auth required (public endpoint + cryptographic verification)
+    let pqc_routes = Router::new()
+        .route("/api/pqc/public-key", get(pq_upload::get_public_key))
+        .route("/api/pqc/upload", post(pq_upload::upload));
 
     // Authenticated routes that require CPR submission
     // These routes are protected by CSRF + Auth + CPR verification
@@ -54,6 +62,19 @@ pub fn create_app(
         .route(
             "/api/admin/users/{account_id}",
             axum::routing::delete(admin::delete_user),
+        )
+        // Quarantine Management
+        .route(
+            "/api/admin/quarantine",
+            get(admin_quarantine::list_quarantined),
+        )
+        .route(
+            "/api/admin/quarantine/{file_id}/approve",
+            post(admin_quarantine::approve_file),
+        )
+        .route(
+            "/api/admin/quarantine/{file_id}/reject",
+            post(admin_quarantine::reject_file),
         )
         .layer(axum_middleware::from_fn_with_state(
             app_state.clone(),
@@ -160,6 +181,7 @@ pub fn create_app(
         .merge(admin_routes)
         .merge(admin_file_routes)
         .merge(user_file_routes)
+        .merge(pqc_routes)
         .fallback_service(ServeDir::new("static"))
         .with_state(app_state)
 }

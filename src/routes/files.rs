@@ -702,8 +702,8 @@ pub async fn download_file(
         return Err((StatusCode::FORBIDDEN, "Access denied".to_string()));
     }
 
-    // Get file info
-    let file = files_repository::get_file_with_size(&state.files_db, &file_id)
+    // Get file info with status
+    let file = files_repository::get_file_with_status(&state.files_db, &file_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "Database error");
@@ -713,6 +713,18 @@ pub async fn download_file(
             )
         })?
         .ok_or((StatusCode::NOT_FOUND, "File not found".to_string()))?;
+
+    // Check quarantine status
+    if file.upload_status == "quarantine" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "File is in quarantine pending admin approval".to_string(),
+        ));
+    }
+
+    if file.upload_status == "rejected" {
+        return Err((StatusCode::GONE, "File was rejected by admin".to_string()));
+    }
 
     download_verified_file_stream(
         &state,
@@ -761,12 +773,12 @@ pub async fn verify_file(
 
     let storage_path = get_storage_path(&file.blake3_hash);
 
-    // Verify integrity (Already safe - reads chunk by chunk)
+    // Verify integrity
     match file_integrity::verify_file_integrity(&storage_path, &file.blake3_hash).await {
         Ok(true) => {
             tracing::info!(file_id = %file_id, "File integrity verified");
             Ok(Json(VerifyResponse {
-                status: "verified".to_string(),
+                status: "No contamination detected".to_string(),
                 blake3_hash: file.blake3_hash,
                 file_size: file.file_size,
             }))
@@ -788,7 +800,7 @@ pub async fn verify_file(
             .await;
 
             Ok(Json(VerifyResponse {
-                status: "contaminated".to_string(),
+                status: "Contaminated".to_string(),
                 blake3_hash: file.blake3_hash,
                 file_size: file.file_size,
             }))

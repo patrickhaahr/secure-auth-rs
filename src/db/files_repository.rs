@@ -1,4 +1,7 @@
-use super::files_models::{AuditAction, FileMetadata, FilePermission, FileWithSize, PhysicalFile};
+use super::files_models::{
+    AuditAction, FileMetadata, FilePermission, FileWithSize, FileWithStatus, PhysicalFile,
+    ThirdPartySender,
+};
 use sqlx::{Pool, Sqlite};
 
 // ============================================================================
@@ -405,4 +408,252 @@ pub async fn log_audit(
     );
 
     Ok(())
+}
+
+// ============================================================================
+// Third-Party File Operations
+// ============================================================================
+
+/// Insert a third-party uploaded file (quarantined by default)
+pub async fn insert_third_party_file(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    filename: &str,
+    file_type: &str,
+    blake3_hash: &str,
+    sender_id: &str,
+) -> Result<FileMetadata, sqlx::Error> {
+    let result = sqlx::query_as::<_, FileMetadata>(
+        r#"
+        INSERT INTO files (id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, origin_type, upload_status, sender_id)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), 'third_party', 'quarantine', ?)
+        RETURNING id, filename, file_type, blake3_hash, uploaded_by, uploaded_at
+        "#,
+    )
+    .bind(id)
+    .bind(filename)
+    .bind(file_type)
+    .bind(blake3_hash)
+    .bind(sender_id) // uploaded_by = sender_id for third-party files
+    .bind(sender_id)
+    .fetch_one(pool)
+    .await;
+
+    match &result {
+        Ok(f) => tracing::info!(
+            file_id = %f.id,
+            filename = %f.filename,
+            sender_id = %sender_id,
+            "Third-party file uploaded (quarantined)"
+        ),
+        Err(e) => tracing::error!(error = %e, "Failed to create third-party file metadata"),
+    }
+
+    result
+}
+
+/// Get file with full status info (origin, status, sender)
+pub async fn get_file_with_status(
+    pool: &Pool<Sqlite>,
+    file_id: &str,
+) -> Result<Option<FileWithStatus>, sqlx::Error> {
+    let result: Option<(String, String, String, String, String, String, i64, String, String, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, 
+               pf.file_size, f.origin_type, f.upload_status, f.sender_id
+        FROM files f
+        JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
+        WHERE f.id = ?
+        "#,
+    )
+    .bind(file_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(result.map(
+        |(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size, origin_type, upload_status, sender_id)| {
+            FileWithStatus {
+                id,
+                filename,
+                file_type,
+                blake3_hash,
+                uploaded_by,
+                uploaded_at,
+                file_size,
+                origin_type,
+                upload_status,
+                sender_id,
+            }
+        },
+    ))
+}
+
+/// Get all quarantined files (for admin review)
+pub async fn get_quarantined_files(pool: &Pool<Sqlite>) -> Result<Vec<FileWithStatus>, sqlx::Error> {
+    let results: Vec<(String, String, String, String, String, String, i64, String, String, Option<String>)> = sqlx::query_as(
+        r#"
+        SELECT f.id, f.filename, f.file_type, f.blake3_hash, f.uploaded_by, f.uploaded_at, 
+               pf.file_size, f.origin_type, f.upload_status, f.sender_id
+        FROM files f
+        JOIN physical_files pf ON f.blake3_hash = pf.blake3_hash
+        WHERE f.upload_status = 'quarantine'
+        ORDER BY f.uploaded_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(results
+        .into_iter()
+        .map(
+            |(id, filename, file_type, blake3_hash, uploaded_by, uploaded_at, file_size, origin_type, upload_status, sender_id)| {
+                FileWithStatus {
+                    id,
+                    filename,
+                    file_type,
+                    blake3_hash,
+                    uploaded_by,
+                    uploaded_at,
+                    file_size,
+                    origin_type,
+                    upload_status,
+                    sender_id,
+                }
+            },
+        )
+        .collect())
+}
+
+/// Approve a quarantined file
+pub async fn approve_file(pool: &Pool<Sqlite>, file_id: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE files SET upload_status = 'approved' WHERE id = ? AND upload_status = 'quarantine'",
+    )
+    .bind(file_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() > 0 {
+        tracing::info!(file_id = %file_id, "File approved from quarantine");
+    }
+    Ok(result.rows_affected())
+}
+
+/// Reject a quarantined file
+pub async fn reject_file(pool: &Pool<Sqlite>, file_id: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE files SET upload_status = 'rejected' WHERE id = ? AND upload_status = 'quarantine'",
+    )
+    .bind(file_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() > 0 {
+        tracing::info!(file_id = %file_id, "File rejected from quarantine");
+    }
+    Ok(result.rows_affected())
+}
+
+// ============================================================================
+// Third-Party Sender Management
+// ============================================================================
+
+/// Get sender by ID
+pub async fn get_sender(
+    pool: &Pool<Sqlite>,
+    sender_id: &str,
+) -> Result<Option<ThirdPartySender>, sqlx::Error> {
+    sqlx::query_as::<_, ThirdPartySender>(
+        r#"
+        SELECT id, name, ed25519_public_key, is_active, created_at, last_upload_at
+        FROM third_party_senders
+        WHERE id = ?
+        "#,
+    )
+    .bind(sender_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Verify sender exists and is active
+pub async fn verify_sender_active(
+    pool: &Pool<Sqlite>,
+    sender_id: &str,
+) -> Result<bool, sqlx::Error> {
+    let result: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM third_party_senders WHERE id = ? AND is_active = 1",
+    )
+    .bind(sender_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(result.0 > 0)
+}
+
+/// Update sender's last upload timestamp
+pub async fn update_sender_last_upload(
+    pool: &Pool<Sqlite>,
+    sender_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE third_party_senders SET last_upload_at = datetime('now') WHERE id = ?")
+        .bind(sender_id)
+        .execute(pool)
+        .await?;
+
+    tracing::debug!(sender_id = %sender_id, "Updated sender last_upload_at");
+    Ok(())
+}
+
+/// Insert a new authorized sender
+pub async fn insert_sender(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    name: &str,
+    ed25519_public_key: &str,
+) -> Result<ThirdPartySender, sqlx::Error> {
+    let result = sqlx::query_as::<_, ThirdPartySender>(
+        r#"
+        INSERT INTO third_party_senders (id, name, ed25519_public_key, is_active, created_at)
+        VALUES (?, ?, ?, 1, datetime('now'))
+        RETURNING id, name, ed25519_public_key, is_active, created_at, last_upload_at
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(ed25519_public_key)
+    .fetch_one(pool)
+    .await;
+
+    match &result {
+        Ok(s) => tracing::info!(sender_id = %s.id, name = %s.name, "Authorized sender registered"),
+        Err(e) => tracing::error!(error = %e, "Failed to register sender"),
+    }
+
+    result
+}
+
+/// Deactivate a sender (soft delete)
+pub async fn deactivate_sender(pool: &Pool<Sqlite>, sender_id: &str) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("UPDATE third_party_senders SET is_active = 0 WHERE id = ?")
+        .bind(sender_id)
+        .execute(pool)
+        .await?;
+
+    if result.rows_affected() > 0 {
+        tracing::info!(sender_id = %sender_id, "Sender deactivated");
+    }
+    Ok(result.rows_affected())
+}
+
+/// Get all authorized senders
+pub async fn get_all_senders(pool: &Pool<Sqlite>) -> Result<Vec<ThirdPartySender>, sqlx::Error> {
+    sqlx::query_as::<_, ThirdPartySender>(
+        r#"
+        SELECT id, name, ed25519_public_key, is_active, created_at, last_upload_at
+        FROM third_party_senders
+        ORDER BY created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await
 }

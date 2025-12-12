@@ -1,21 +1,11 @@
-mod crypto;
-mod db;
-mod middleware;
-mod routes;
-mod tls;
-
 use axum::extract::DefaultBodyLimit;
-use sqlx::Pool;
-use sqlx::Sqlite;
+use secure_auth_rs::{
+    crypto, db, middleware, routes, tls, AppState
+};
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[derive(Clone)]
-pub struct AppState {
-    pub auth_db: Pool<Sqlite>,
-    pub files_db: Pool<Sqlite>,
-    pub csrf: middleware::csrf::CsrfProtection,
-}
 
 #[tokio::main]
 async fn main() {
@@ -42,10 +32,32 @@ async fn main() {
     // Initialize CSRF protection
     let csrf_protection = middleware::csrf::CsrfProtection::new();
 
+    // Load PQ keys
+    let pq_sk_path = std::env::var("PQ_SECRET_KEY_PATH")
+        .expect("PQ_SECRET_KEY_PATH environment variable required");
+    let pq_pk_path = std::env::var("PQ_PUBLIC_KEY_PATH")
+        .expect("PQ_PUBLIC_KEY_PATH environment variable required");
+
+    let pq_secret_key = Arc::new(
+        crypto::pq_hybrid::load_secret_key(Path::new(&pq_sk_path))
+            .expect("Failed to load PQ secret key"),
+    );
+    let pq_public_key = Arc::new(
+        crypto::pq_hybrid::load_public_key(Path::new(&pq_pk_path))
+            .expect("Failed to load PQ public key"),
+    );
+
+    tracing::info!(
+        "PQ hybrid keys loaded. Fingerprint: {}",
+        crypto::pq_hybrid::fingerprint(&pq_public_key)
+    );
+
     let app_state = AppState {
         auth_db: auth_pool,
         files_db: files_pool,
         csrf: csrf_protection.clone(),
+        pq_secret_key,
+        pq_public_key,
     };
 
     // Verify static directory exists
@@ -58,6 +70,11 @@ async fn main() {
         .canonicalize()
         .unwrap_or_else(|_| static_dir.to_path_buf());
     tracing::info!("Serving static files from: {:?}", canonical_path);
+
+    // Ensure upload directory exists
+    tokio::fs::create_dir_all("files/uploads")
+        .await
+        .expect("Failed to create files/uploads directory");
 
     // Configure rate limiting for TOTP endpoints
     // 5 requests per minute per IP to prevent brute force attacks

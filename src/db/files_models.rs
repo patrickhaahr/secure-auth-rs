@@ -35,6 +35,92 @@ pub struct FileWithSize {
     pub file_size: i64,
 }
 
+// ============================================================================
+// Third-Party Upload Support
+// ============================================================================
+
+/// File origin type - where the file came from
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OriginType {
+    /// Uploaded by admin via web UI
+    Internal,
+    /// Uploaded by external server via PQC API
+    ThirdParty,
+}
+
+impl OriginType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OriginType::Internal => "internal",
+            OriginType::ThirdParty => "third_party",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "internal" => Some(OriginType::Internal),
+            "third_party" => Some(OriginType::ThirdParty),
+            _ => None,
+        }
+    }
+}
+
+/// File upload status (Zero Trust quarantine workflow)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UploadStatus {
+    /// Awaiting admin approval (third-party uploads)
+    Quarantine,
+    /// Cleared for user access
+    Approved,
+    /// Admin rejected the file
+    Rejected,
+}
+
+impl UploadStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UploadStatus::Quarantine => "quarantine",
+            UploadStatus::Approved => "approved",
+            UploadStatus::Rejected => "rejected",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "quarantine" => Some(UploadStatus::Quarantine),
+            "approved" => Some(UploadStatus::Approved),
+            "rejected" => Some(UploadStatus::Rejected),
+            _ => None,
+        }
+    }
+}
+
+/// Extended file metadata with origin and status (for third-party files)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWithStatus {
+    pub id: String,
+    pub filename: String,
+    pub file_type: String,
+    pub blake3_hash: String,
+    pub uploaded_by: String,
+    pub uploaded_at: String,
+    pub file_size: i64,
+    pub origin_type: String,
+    pub upload_status: String,
+    pub sender_id: Option<String>,
+}
+
+/// Authorized third-party sender
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ThirdPartySender {
+    pub id: String,
+    pub name: String,
+    pub ed25519_public_key: String,
+    pub is_active: bool,
+    pub created_at: String,
+    pub last_upload_at: Option<String>,
+}
+
 /// File permission record
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct FilePermission {
@@ -75,6 +161,12 @@ pub enum AuditAction {
     PermissionRevoke,
     Download,
     IntegrityFailure,
+    /// Third-party upload received
+    ThirdPartyUpload,
+    /// Quarantined file approved by admin
+    QuarantineApprove,
+    /// Quarantined file rejected by admin
+    QuarantineReject,
 }
 
 impl AuditAction {
@@ -86,6 +178,9 @@ impl AuditAction {
             AuditAction::PermissionRevoke => "PERMISSION_REVOKE",
             AuditAction::Download => "DOWNLOAD",
             AuditAction::IntegrityFailure => "INTEGRITY_FAILURE",
+            AuditAction::ThirdPartyUpload => "THIRD_PARTY_UPLOAD",
+            AuditAction::QuarantineApprove => "QUARANTINE_APPROVE",
+            AuditAction::QuarantineReject => "QUARANTINE_REJECT",
         }
     }
 }
