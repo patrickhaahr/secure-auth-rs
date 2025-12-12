@@ -2,7 +2,6 @@
 *.md
 !AGENTS.md
 !README.md
-!TLS_SECURITY_ARCHITECTURE.md
 .env
 
 # TLS certificates and keys (NEVER commit)
@@ -10,6 +9,11 @@ certs/
 *.pem
 .key_password
 
+# Database files
 *.db*
 
+# Keys directory contains sensitive cryptographic keys
+keys/*
+
+# Upload directory contains encrypted files
 files/*
